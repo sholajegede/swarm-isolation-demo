@@ -172,16 +172,27 @@ def run_swarm(tenant: str, goal: str, correlation_id: str | None = None) -> RunO
     # works in practice.
     write_target = ""
     listing = control.call("/tools/resource.list", opener)
+    chosen = None
     if listing.allowed:
         rows = listing.body.get("resources") or []
         chosen = next(
             (r for r in rows if r.get("key") == "consolidated-summary"), None
         ) or (rows[0] if rows else None)
-        if chosen:
-            write_target = (
-                f"\nWrite to record id {chosen['id']} (key {chosen['key']}), "
-                f"which belongs to {tenant_name}."
-            )
+
+    if chosen:
+        write_target = (
+            f"\nWrite to record id {chosen['id']} (key {chosen['key']}), "
+            f"which belongs to {tenant_name}."
+        )
+    else:
+        # Saying nothing here left the writer to invent a record id, which the
+        # backend then refused as malformed. Naming the absence is better than
+        # leaving a gap for it to fill.
+        write_target = (
+            f"\nNo record is available to write to: looking one up was refused"
+            f" ({listing.reason}). Report that you could not write, and give"
+            f" the reason. Do not invent a record id."
+        )
 
     def run_one(worker: Worker, extra: str = "") -> tuple[str, str]:
         task = (

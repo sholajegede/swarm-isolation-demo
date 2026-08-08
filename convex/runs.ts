@@ -88,6 +88,33 @@ export const finish = internalMutation({
   },
 });
 
+/**
+ * Close any run this tenant still has open.
+ *
+ * A suspended tenant cannot close its own runs: the finish endpoint is behind
+ * the same seam that is now refusing it. Left alone the run sits at "running"
+ * for ever, which reads as still working when it is dead. The kill switch
+ * closes them, because it is the thing that knows they are over.
+ */
+export const killInFlight = internalMutation({
+  args: { orgCode: v.string() },
+  handler: async (ctx, { orgCode }) => {
+    const runs = await ctx.db
+      .query("runs")
+      .withIndex("by_org", (q) => q.eq("orgCode", orgCode))
+      .collect();
+
+    let killed = 0;
+    for (const run of runs) {
+      if (run.status === "running") {
+        await ctx.db.patch(run._id, { status: "killed", completedAt: Date.now() });
+        killed += 1;
+      }
+    }
+    return killed;
+  },
+});
+
 export const recent = internalQuery({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, { limit }) =>

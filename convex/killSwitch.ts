@@ -30,6 +30,8 @@ export const suspend = internalAction({
       orgCode,
       isSuspended: true,
     });
+    // The tenant can no longer close its own runs, so close them here.
+    await ctx.runMutation(internal.runs.killInFlight, { orgCode });
     return { orgCode, suspended: true };
   },
 });

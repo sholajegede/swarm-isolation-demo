@@ -566,3 +566,65 @@ tenants, watched on screen:
   lose its fill, both traced to the Dark Reader extension rewriting the page.
   Computed styles confirmed the CSS was correct; the page has its own dark
   theme and does not need it.
+
+---
+
+## Phase 7 — Production pass
+
+**Bugs fixed**
+
+- **A run stayed at `running` for ever after a kill.** A suspended tenant cannot
+  close its own run, because the finish endpoint sits behind the same seam that
+  is now refusing it. The run read as still working when it was dead. The kill
+  switch now closes any run the tenant still has open, because it is the thing
+  that knows they are over. One stuck run was found in the deployment and
+  cleared.
+- **The write worker invented a record id.** When its lookup was refused it
+  fabricated `invoice-summary-tenant-a` and got `bad_request`. Saying nothing
+  had left a gap for it to fill; the task now names the absence and tells it not
+  to invent one.
+- **Zero and "not loaded yet" looked identical.** The metric tiles showed `0`
+  while the query was still in flight. They now show a skeleton until an answer
+  arrives, so a real zero means something.
+- **Dead code.** `public.latestRun` was never called. Replaced with
+  `public.runStatus`, which the console now uses to show whether a run is
+  running, completed, or stopped by the kill switch.
+- Worker summaries were cut off mid-sentence at 900 tokens; raised to 1200.
+
+**Production checks**
+
+- Fail-closed re-checked, and the gap covered: a verified token can carry an org
+  code this deployment has never provisioned, and treating that as permitted
+  would undo the whole boundary. `tenants.isSuspended` returns `true` for an
+  unknown tenant, and there are now tests for it — including that suspending one
+  tenant leaves the others running.
+- JWKS caching, minimal scopes, and correlation ids end to end were already in
+  place from phases 2 and 3 and were re-confirmed by the live scripts.
+- Token lifetime remains a dashboard setting; see phase 5.
+
+**Copy**
+
+Rewritten towards ASD-STE100: short sentences, active voice, one idea each, and
+one term per concept. "Worker" and "customer" both became "agent" and "tenant"
+consistently, including a card heading on the landing page that still said
+"per customer" while its body said "tenant".
+
+**Design**
+
+The palette carries one meaning throughout: green contained, red breached,
+purple stopped. Kinde's own brand tokens were not applied, because the brand
+guide was not available and inventing approximate brand colours would be worse
+than a restrained neutral palette.
+
+**Checked**
+
+`pnpm typecheck`, `pnpm lint`, `pnpm test` (23/23) and `pnpm build` clean.
+`verify:auth`, `repro:cross-tenant` and `kill-switch` all pass. Landing page and
+console re-rendered in the browser after the copy pass. Three tenants running,
+mode `per-org`.
+
+**Also added**
+
+`BUILD_RECORD.md` — a single consolidated account of the whole build, including
+every mistake and the two findings that contradicted the plan, compiled from
+this log and the git history for use when writing about it.

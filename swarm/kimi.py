@@ -45,7 +45,8 @@ class Kimi:
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
-        max_tokens: int = 900,
+        # Summaries were being cut off mid-sentence at 900.
+        max_tokens: int = 1200,
     ) -> dict[str, Any]:
         # No temperature is sent: kimi-k3 accepts only its default, and pinning
         # a value that a future model rejects is the same trap as pinning an id.

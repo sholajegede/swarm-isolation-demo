@@ -78,6 +78,41 @@ async function seed() {
   return { t, ...ids };
 }
 
+describe("suspension state, read by the seam", () => {
+  test("a tenant this deployment has never heard of counts as suspended", async () => {
+    const { t } = await seed();
+
+    // A verified token can carry an org code that was never provisioned here.
+    // Treating the unknown as permitted would be the whole boundary undone.
+    expect(
+      await t.query(internal.tenants.isSuspended, { orgCode: "org_never_seen" }),
+    ).toBe(true);
+  });
+
+  test("a known, running tenant is not suspended", async () => {
+    const { t } = await seed();
+    expect(await t.query(internal.tenants.isSuspended, { orgCode: TENANT_A })).toBe(
+      false,
+    );
+  });
+
+  test("suspending one tenant leaves the others alone", async () => {
+    const { t } = await seed();
+
+    await t.mutation(internal.tenants.setSuspended, {
+      orgCode: TENANT_A,
+      isSuspended: true,
+    });
+
+    expect(await t.query(internal.tenants.isSuspended, { orgCode: TENANT_A })).toBe(
+      true,
+    );
+    expect(await t.query(internal.tenants.isSuspended, { orgCode: TENANT_B })).toBe(
+      false,
+    );
+  });
+});
+
 describe("tenant isolation", () => {
   test("a listing returns only the acting tenant's resources", async () => {
     const { t } = await seed();

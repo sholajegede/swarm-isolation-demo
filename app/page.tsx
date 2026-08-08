@@ -14,10 +14,11 @@ export default function Landing() {
       </h1>
 
       <p className="mt-6 text-lg leading-relaxed text-muted">
-        A swarm is a group of AI agents working at once. Give them one shared
-        login for all your customers, and a single agent that misbehaves can
-        reach every customer&rsquo;s data. Agents move faster than anyone can
-        react, so by the time you notice, it has already been everywhere.
+        A swarm is a group of AI agents that work at the same time. Each of your
+        customers is a tenant. If you give the swarm one login for all the
+        tenants, then one agent that goes wrong can read the data of every
+        tenant. Agents work faster than a person can react. When you see the
+        problem, the agent has already read everything.
       </p>
 
       <div className="mt-10 grid gap-4 sm:grid-cols-2">
@@ -26,32 +27,34 @@ export default function Landing() {
             Shared identity
           </p>
           <p className="mt-3 text-sm leading-relaxed">
-            Every agent carries the same credential. It belongs to no customer
-            in particular, so nothing says no. One agent reads them all.
+            All the agents use the same credential. That credential belongs to
+            no tenant. Thus nothing refuses the call, and one agent reads all
+            the tenants.
           </p>
         </div>
 
         <div className="rounded-lg border border-border-subtle bg-surface p-5">
           <p className="font-mono text-xs uppercase tracking-widest text-ok">
-            Identity per customer
+            Identity per tenant
           </p>
           <p className="mt-3 text-sm leading-relaxed">
-            Each agent carries a credential scoped to one customer. The same
-            reach is refused at the boundary, recorded, and goes no further.
+            Each agent uses a credential for one tenant only. The server refuses
+            the same call at the boundary. It records the attempt. The agent
+            gets no data.
           </p>
         </div>
       </div>
 
       <p className="mt-10 text-base leading-relaxed">
-        This is a working demo, not a mock-up. Real agents decide what to do,
-        real tokens are issued per customer, and a real server decides what each
-        call is allowed to touch. You can watch an agent reach across, and watch
-        the same reach get stopped.
+        This demo operates. It is not a mock-up. The agents decide their own
+        actions. The identity service issues a token for each tenant. The server
+        decides what each call can read. You can watch an agent reach for
+        another tenant. Then you can watch the server stop the same call.
       </p>
 
       <p className="mt-4 text-base leading-relaxed">
-        There is also an emergency stop. Suspend one customer and its agents die
-        where they stand, while everyone else keeps working.
+        The demo also has an emergency stop. Suspend one tenant, and its agents
+        stop immediately. The other tenants continue to operate.
       </p>
 
       <Link

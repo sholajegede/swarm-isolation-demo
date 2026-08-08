@@ -55,8 +55,8 @@ export function Timeline({
     return (
       <div className="flex h-full min-h-64 items-center justify-center rounded-lg border border-dashed border-border-subtle p-8 text-center">
         <p className="max-w-xs text-sm text-muted">
-          No run yet. Pick a tenant and start a swarm to watch its workers step
-          through in real time.
+          No run started. Select a tenant, then start a swarm. The steps of each
+          agent show here as they occur.
         </p>
       </div>
     );
@@ -67,8 +67,8 @@ export function Timeline({
       <div className="flex h-full min-h-64 items-center justify-center rounded-lg border border-border-subtle p-8 text-center">
         <p className="text-sm text-muted">
           {running
-            ? "Waiting for the first worker to report…"
-            : "This run produced no events."}
+            ? "The swarm is starting. The first agent will report shortly."
+            : "This run recorded no steps."}
         </p>
       </div>
     );

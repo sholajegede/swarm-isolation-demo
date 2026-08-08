@@ -9,42 +9,56 @@ import { Timeline, type RunEvent } from "./Timeline";
 type Mode = "shared" | "per-org";
 
 const METRIC_HELP: Record<string, string> = {
-  workers: "Agents that made at least one call.",
-  "tool calls": "Reads and writes attempted.",
-  "cross-org attempts": "Calls reaching for another tenant's record.",
-  blocked: "Calls the server refused.",
-  escapes: "Cross-tenant calls that were allowed through.",
+  workers: "Agents that made one call or more.",
+  "tool calls": "Reads and writes that the agents tried.",
+  "cross-org attempts": "Calls that reached for another tenant's record.",
+  blocked: "Calls that the server refused.",
+  escapes: "Cross-tenant calls that the server permitted.",
 };
 
 function Metric({
   label,
   value,
   alarming,
+  loading,
 }: {
   label: string;
   value: number;
   alarming?: boolean;
+  loading?: boolean;
 }) {
+  const alarmed = Boolean(alarming) && !loading && value > 0;
+
   return (
     <div
-      className={`rounded-lg border p-3 ${
-        alarming && value > 0
-          ? "border-breach bg-breach-soft"
-          : "border-border-subtle bg-surface"
+      className={`rounded-lg border p-3 transition-colors ${
+        alarmed ? "border-breach bg-breach-soft" : "border-border-subtle bg-surface"
       }`}
       title={METRIC_HELP[label]}
     >
-      <p
-        className={`font-mono text-2xl tabular-nums ${
-          alarming && value > 0 ? "text-breach" : ""
-        }`}
-      >
-        {value}
-      </p>
+      {loading ? (
+        <span
+          className="block h-8 w-8 animate-pulse rounded bg-surface-muted"
+          aria-hidden="true"
+        />
+      ) : (
+        <p
+          className={`font-mono text-2xl tabular-nums ${alarmed ? "text-breach" : ""}`}
+        >
+          {value}
+        </p>
+      )}
       <p className="mt-0.5 text-[11px] uppercase tracking-wide text-muted">{label}</p>
     </div>
   );
 }
+
+const STATUS_TEXT: Record<string, string> = {
+  running: "running",
+  completed: "completed",
+  failed: "failed",
+  killed: "stopped by the kill switch",
+};
 
 export function Console() {
   const tenants = useQuery(api.public.tenants);
@@ -72,6 +86,10 @@ export function Console() {
     correlationId ? { correlationId } : "skip",
   );
   const audit = useQuery(api.public.recentAudit, { limit: 20 });
+  const runState = useQuery(
+    api.public.runStatus,
+    correlationId ? { correlationId } : "skip",
+  );
 
   const tenant = tenants?.find((t) => t.orgCode === orgCode) ?? null;
   const running = busy === "run";
@@ -155,8 +173,8 @@ export function Console() {
               Isolation mode
             </p>
             <p className="mt-1 text-sm text-muted">
-              Decided by the server. Neither the browser nor a worker can choose
-              it.
+              The server sets this mode. The browser and the agents cannot
+              change it.
             </p>
           </div>
 
@@ -190,13 +208,14 @@ export function Console() {
         <p className="mt-4 text-sm">
           {mode === "shared" ? (
             <span className="text-breach">
-              One identity for the whole swarm. Nothing is scoped to a tenant, so
-              a worker can read any tenant it names.
+              All the agents use one identity. That identity belongs to no
+              tenant. Thus an agent can read the data of any tenant that it
+              names.
             </span>
           ) : (
             <span className="text-ok">
-              Each worker carries an identity scoped to one tenant. A reach
-              across the boundary is refused and recorded.
+              Each agent has an identity for one tenant only. If an agent reaches
+              for a different tenant, the server refuses the call and records it.
             </span>
           )}
         </p>
@@ -262,8 +281,21 @@ export function Console() {
         </button>
 
         {correlationId ? (
-          <span className="font-mono text-xs text-muted">
+          <span className="flex items-center gap-2 font-mono text-xs text-muted">
             run {correlationId.slice(0, 8)}
+            {runState ? (
+              <span
+                className={`rounded px-1.5 py-0.5 ${
+                  runState.status === "killed"
+                    ? "bg-halt-soft text-halt"
+                    : runState.status === "running"
+                      ? "bg-surface-muted"
+                      : "bg-ok-soft text-ok"
+                }`}
+              >
+                {STATUS_TEXT[runState.status] ?? runState.status}
+              </span>
+            ) : null}
           </span>
         ) : null}
       </section>
@@ -276,34 +308,53 @@ export function Console() {
 
       {/* Metrics */}
       <section className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <Metric label="workers" value={metrics?.workers ?? 0} />
-        <Metric label="tool calls" value={metrics?.toolCalls ?? 0} />
-        <Metric
-          label="cross-org attempts"
-          value={metrics?.crossOrgAttempts ?? 0}
-        />
-        <Metric label="blocked" value={metrics?.blocked ?? 0} />
-        <Metric label="escapes" value={metrics?.escapes ?? 0} alarming />
+        {(() => {
+          // Undefined means the query is still in flight. Zero is a real
+          // answer, and the two must not look the same.
+          const loading = Boolean(correlationId) && metrics === undefined;
+          return (
+            <>
+              <Metric label="workers" value={metrics?.workers ?? 0} loading={loading} />
+              <Metric
+                label="tool calls"
+                value={metrics?.toolCalls ?? 0}
+                loading={loading}
+              />
+              <Metric
+                label="cross-org attempts"
+                value={metrics?.crossOrgAttempts ?? 0}
+                loading={loading}
+              />
+              <Metric label="blocked" value={metrics?.blocked ?? 0} loading={loading} />
+              <Metric
+                label="escapes"
+                value={metrics?.escapes ?? 0}
+                loading={loading}
+                alarming
+              />
+            </>
+          );
+        })()}
       </section>
 
       {tenant?.isSuspended ? (
         <p className="mt-3 rounded-md border border-halt bg-halt-soft px-4 py-3 text-sm text-halt">
           <strong className="font-semibold">{tenant.name} is suspended.</strong>{" "}
-          Every call it makes is refused
+          The server refuses all of its calls
           {metrics && metrics.stopped > 0
-            ? ` — ${metrics.stopped} so far on this run`
+            ? `. It refused ${metrics.stopped} calls in this run`
             : ""}
-          . The timeline stops here because a suspended tenant cannot write
-          anything at all, including its own log lines. Other tenants are
-          unaffected.
+          . The timeline stops here, because a suspended tenant cannot write
+          data, and it cannot write its own log lines. The other tenants
+          continue to operate.
         </p>
       ) : null}
 
       {metrics && metrics.escapes > 0 ? (
         <p className="mt-3 rounded-md border border-breach bg-breach-soft px-4 py-3 text-sm text-breach">
-          {metrics.escapes} call{metrics.escapes === 1 ? "" : "s"} crossed a
-          tenant boundary and {metrics.escapes === 1 ? "was" : "were"} allowed
-          through. Switch to per-org and run it again.
+          The server permitted {metrics.escapes} call
+          {metrics.escapes === 1 ? "" : "s"} that crossed a tenant boundary.
+          Select per-org, then start the swarm again.
         </p>
       ) : null}
 

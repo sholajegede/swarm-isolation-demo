@@ -65,16 +65,16 @@ export const setIsolationMode = mutation({
   },
 });
 
-/** The most recent run for a tenant, whatever its state. */
-export const latestRun = query({
-  args: { orgCode: v.string() },
-  handler: async (ctx, { orgCode }) => {
+/** The state of one run, so the console can say whether it is still going. */
+export const runStatus = query({
+  args: { correlationId: v.optional(v.string()) },
+  handler: async (ctx, { correlationId }) => {
+    if (!correlationId) return null;
     const run = await ctx.db
       .query("runs")
-      .withIndex("by_org", (q) => q.eq("orgCode", orgCode))
-      .order("desc")
-      .first();
-    return run ?? null;
+      .withIndex("by_correlation", (q) => q.eq("correlationId", correlationId))
+      .unique();
+    return run ? { status: run.status, goal: run.goal } : null;
   },
 });
 
