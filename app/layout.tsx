@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import type { ReactNode } from "react";
 
 import { Providers } from "./providers";
 import "./globals.css";
@@ -20,7 +21,10 @@ export const metadata: Metadata = {
     "An AI swarm that reaches across tenant boundaries, and the org-scoped identity that stops it.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+// The prop type is written out rather than using the generated `LayoutProps`.
+// Next writes that type into .next during a build, so a fresh clone cannot
+// typecheck until it has built once.
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"
