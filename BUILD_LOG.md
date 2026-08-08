@@ -682,3 +682,59 @@ the behaviour worth having.
 
 `AuditRow` in the script helpers had no `workerLabel`, so counting distinct
 agents did not compile. Found by `pnpm typecheck`, not at run time.
+
+---
+
+## Phase 9 — Documentation and housekeeping
+
+**Written**
+
+- `README.md` — the Kinde items to create, the install and configure steps, the
+  commands, and a table of the scripts that prove each part. Three limits are
+  stated plainly rather than left for someone to find.
+- `CHANGELOG.md` — the first working version, what it adds, what was checked.
+
+Both follow the writing rules: active voice, short sentences, one idea each,
+plain words, and one term for one thing.
+
+**Flagged items, fixed**
+
+- The Convex CLI helper now retries a dropped connection. One end-to-end run had
+  failed on a healthy deployment because a single call did not complete. The
+  functions it calls set or read a value, so a repeat is safe.
+
+**Flagged items, not fixable here**
+
+- The 24 hour token lifetime is a Kinde dashboard setting. The Management API
+  application holds organization scopes only.
+- Kinde brand colours were not applied, because the brand guide was not
+  available.
+- The console has no operator login. A real guard needs a login, and a key held
+  in the browser would not be a secret. The README states the limit and says to
+  run the demo locally.
+
+**Fresh clone check**
+
+The repository was cloned, and the README steps were followed exactly.
+
+- The clone carries no `.env.local`, and `convex/_generated` is present.
+- `pnpm install` runs the `prepare` script, so the authorship hook is active in
+  a clone without any extra step.
+- With the credentials copied in, `pnpm e2e --no-swarm` passed every beat from
+  the clone and exited `0`.
+
+**One fault the fresh clone found**
+
+`pnpm typecheck` failed in a clone with `Cannot find name 'LayoutProps'`. Next
+writes that type into `.next` during a build, and a clone has no `.next`. Anyone
+following the README in order would have hit it. The prop type is now written
+out, and a second clone passed typecheck, lint, tests and build before any build
+had run.
+
+**Secrets**
+
+The contents of `.env.local` were displayed in the session that built this
+demo, so all fifteen Kinde values should be treated as exposed and rotated
+before the repository is shown to anyone. The repository itself has never held
+them: `.env.local` is ignored, and every commit was scanned for the values
+before it was made.
