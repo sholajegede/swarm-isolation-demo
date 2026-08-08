@@ -153,7 +153,17 @@ scripts/
                          the same call twice, and only the mode differs.
                          Shared lets it through, per-org refuses it 403.
 
-swarm/                   The Kimi K3 agents (Python)         [coming later]
+swarm/                   The Kimi K3 agents (Python)
+  identity.py            Each worker gets its own token, for its own tenant
+                         and its own role. No shared credential exists.
+  backend.py             The only way a worker reaches data.
+  kimi.py                Talks to the Kimi K3 model.
+  worker.py              One agent: think, call a tool, react, report.
+  orchestrator.py        Splits the job and runs three workers at once.
+
+  Run it with:
+    python3 -m venv .venv && ./.venv/bin/pip install -r swarm/requirements.txt
+    ./.venv/bin/python -m swarm --tenant A
 
 scripts/                 Live proof scripts                  [coming later]
 ```
@@ -211,7 +221,7 @@ happens again for them. Other tenants keep running, untouched.
 - [x] Database tables and the tenant isolation test
 - [x] Token checking against Kinde
 - [x] The enforcement seam and the two modes
-- [ ] The Kimi K3 swarm
+- [x] The Kimi K3 swarm
 - [ ] The emergency stop
 - [ ] The screen you watch it on
 

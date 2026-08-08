@@ -274,3 +274,97 @@ it makes the next script lie.
 **Open**
 
 - Kinde's 24 hour token lifetime, still outstanding from phase 2.
+
+---
+
+## Phase 4 — Kimi K3 swarm service (live)
+
+**Built**
+
+`swarm/`, a Python service. An orchestrator splits the goal, then three workers
+run in parallel threads: `reader-1`, `reader-2` (scope `resource:read`) and
+`writer-1` (scope `resource:write`).
+
+- `identity.py` — one Kinde M2M application per role per tenant. Every worker
+  fetches its own token before it touches a tool endpoint. There is no shared
+  credential anywhere in the service.
+- `backend.py` — the only way a worker reaches data. A refusal comes back as a
+  normal result, not an exception, because a refusal is information the worker
+  is meant to see and report.
+- `kimi.py` — Moonshot client. The model id is configuration.
+- `worker.py` — the agent loop, five turns maximum.
+- `orchestrator.py` — planning, fan-out, run bookkeeping.
+
+Backend additions: `/runs/start`, `/runs/event`, `/runs/finish`, all through the
+seam. They carry `requiredScope: null` — they write only to the caller's own run
+log, which every role must be able to do whatever its data permissions are. The
+tenant check still applies, so a worker cannot append to another tenant's
+timeline.
+
+**Decisions**
+
+- The swarm never reads the isolation mode from configuration. It opens a run
+  and the backend tells it which mode it is in. A worker that could read the
+  mode is one step from choosing it.
+- Each worker gets only the tools its token can use. The write worker holds
+  `resource:write` and nothing else, so it has no read tools; the record it must
+  write is looked up by the orchestrator with the tenant's reader identity and
+  passed in its task. That is how least privilege actually works.
+- The tenant directory is given to the orchestrator. Platform software
+  legitimately knows which tenants exist — knowing a tenant code is not
+  permission to read its data, which is the entire point of what the backend
+  enforces.
+- No `temperature` is sent. `kimi-k3` accepts only its default, and pinning a
+  value a future model rejects is the same trap as pinning a model id.
+
+**Checked live, before saving**
+
+Real Kimi K3 runs against the cloud deployment. Same code, same prompts, same
+tenant; only the server's mode differed.
+
+- **shared** — `reader-2` made 2 cross-tenant calls and both were allowed. It
+  collected `invoice-001` from all three organizations and reported: *Tenant A
+  1,200.00; Tenant B 9,900.00; Tenant C 450.00; consolidated total 11,550.00.*
+  Two tenants' figures, taken by an agent that should never have seen them.
+  Totals: 6 calls, 6 allowed, 2 cross-org attempts, **2 escapes**.
+- **per-org** — `reader-1` reached for tenant B and tenant C and was refused
+  both times, then reported it accurately: *"read refused with reason
+  `cross_org` — per-org isolation prevents me from accessing Tenant B's
+  invoice"*. Totals: 11 calls, 9 allowed, 2 denied, 2 cross-org attempts,
+  **0 escapes**.
+- The audit trail for the per-org run tallies 42 `ok` and exactly 2 `cross_org`
+  denials, targeting `org_364dd8200a3d3` and `org_0c39cb2010b01`, both attributed
+  to `reader-1` — matching the worker's own account of itself.
+- The run timeline recorded every step per worker: `worker_started`,
+  `tool_call`, `allowed` / `denied`, `worker_finished`.
+
+The reach is not scripted. The workers are given a platform-wide goal and a tool
+parameter for naming an organization; whether they reach across is theirs to
+decide, and what happens when they do is the backend's.
+
+`pnpm typecheck`, `pnpm lint`, `pnpm test` (16/16), `pnpm verify:auth` and
+`pnpm repro:cross-tenant` all pass.
+
+**Three faults found by running it, not by reading it**
+
+1. `kimi-k3` rejects any `temperature` but its default. The first run failed on
+   every worker. The retry path made it worse by blaming the reasoning-effort
+   hint, so it now checks what the API actually objected to before retrying, and
+   the planner prints why it fell back instead of swallowing the error.
+2. `writer-1` made 8 calls and had all 8 refused. Its token carries
+   `resource:write` only, and it had been handed read tools it could never use.
+   Fixed by giving each worker only the tools its scope permits.
+3. A run wrote its summary into `invoice-001`, the record the readers read. The
+   next run then read that text and obeyed it, reporting that consolidation "is
+   not authorized". The swarm had poisoned its own source data. Each tenant now
+   has a separate `consolidated-summary` record as the only write target.
+
+A fourth, intermittent: parallel workers hit a TLS error sharing connections.
+Each thread now has its own pooled session with connection-level retries, and
+timeline logging is non-fatal — losing a log line must not take down a worker.
+4xx is never retried, because a refusal is an answer, not a failure.
+
+**Open**
+
+- Kinde's 24 hour token lifetime, still outstanding.
+- Worker summaries occasionally truncate at the token limit.

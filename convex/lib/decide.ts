@@ -30,8 +30,13 @@ export type DecisionInput = {
   actorOrgCode: string;
   /** Scopes on the verified token. */
   actorScopes: string[];
-  /** The scope this action needs. */
-  requiredScope: string;
+  /**
+   * The scope this action needs, or null when any verified token will do.
+   * Null is for calls that only touch the caller's own run log, which every
+   * role must be able to write whatever its data permissions are. It relaxes
+   * the permission check only - the tenant check still applies.
+   */
+  requiredScope: string | null;
   /**
    * The tenant that owns the record being reached for, or null when the call
    * targets no particular record (a listing of the caller's own data).
@@ -59,7 +64,10 @@ export function decide(input: DecisionInput): Decision {
     if (crossOrg) {
       return { allow: false, reason: DENY.crossOrg, crossOrg };
     }
-    if (!input.actorScopes.includes(input.requiredScope)) {
+    if (
+      input.requiredScope !== null &&
+      !input.actorScopes.includes(input.requiredScope)
+    ) {
       return { allow: false, reason: DENY.insufficientScope, crossOrg };
     }
     return { allow: true, reason: ALLOW.ok, crossOrg };

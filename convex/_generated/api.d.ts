@@ -15,6 +15,7 @@ import type * as lib_kindeToken from "../lib/kindeToken.js";
 import type * as lib_seam from "../lib/seam.js";
 import type * as lib_tenancy from "../lib/tenancy.js";
 import type * as resources from "../resources.js";
+import type * as runs from "../runs.js";
 import type * as seed from "../seed.js";
 import type * as settings from "../settings.js";
 
@@ -32,6 +33,7 @@ declare const fullApi: ApiFromModules<{
   "lib/seam": typeof lib_seam;
   "lib/tenancy": typeof lib_tenancy;
   resources: typeof resources;
+  runs: typeof runs;
   seed: typeof seed;
   settings: typeof settings;
 }>;

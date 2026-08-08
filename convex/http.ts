@@ -135,11 +135,89 @@ const writeResource = httpAction(async (ctx, request) =>
   }),
 );
 
+/*
+ * Run bookkeeping. These carry no scope requirement: they write only to the
+ * caller's own run log, and every role has to be able to do that whatever its
+ * data permissions are. The tenant check still applies, so a worker cannot
+ * append to another tenant's timeline.
+ */
+
+const startRun = httpAction(async (ctx, request) =>
+  guard(ctx, request, {
+    action: "run.start",
+    requiredScope: null,
+    resolveTarget: async () => ({ kind: "none" }),
+    perform: async (_target, body, identity, mode) => {
+      const correlationId = String(body.correlationId ?? "");
+      await ctx.runMutation(internal.runs.start, {
+        correlationId,
+        orgCode: identity.orgCode,
+        isolationMode: mode,
+        goal: String(body.goal ?? ""),
+      });
+      return { runStarted: correlationId };
+    },
+  }),
+);
+
+const appendRunEvent = httpAction(async (ctx, request) =>
+  guard(ctx, request, {
+    action: "run.event",
+    requiredScope: null,
+    resolveTarget: async () => ({ kind: "none" }),
+    perform: async (_target, body, identity) => {
+      const kinds = [
+        "worker_started",
+        "tool_call",
+        "allowed",
+        "denied",
+        "worker_finished",
+        "note",
+      ] as const;
+      const kind = kinds.includes(body.kind as (typeof kinds)[number])
+        ? (body.kind as (typeof kinds)[number])
+        : "note";
+
+      const id = await ctx.runMutation(internal.runs.appendEvent, {
+        correlationId: String(body.correlationId ?? ""),
+        orgCode: identity.orgCode,
+        workerLabel: String(body.workerLabel ?? "worker"),
+        kind,
+        message: String(body.message ?? ""),
+      });
+      return { recorded: id !== null };
+    },
+  }),
+);
+
+const finishRun = httpAction(async (ctx, request) =>
+  guard(ctx, request, {
+    action: "run.finish",
+    requiredScope: null,
+    resolveTarget: async () => ({ kind: "none" }),
+    perform: async (_target, body, identity) => {
+      const status =
+        body.status === "failed" || body.status === "killed"
+          ? body.status
+          : "completed";
+      await ctx.runMutation(internal.runs.finish, {
+        correlationId: String(body.correlationId ?? ""),
+        orgCode: identity.orgCode,
+        status,
+      });
+      return { finished: status };
+    },
+  }),
+);
+
 const http = httpRouter();
 
 http.route({ path: "/tools/whoami", method: "POST", handler: whoami });
 http.route({ path: "/tools/resource.list", method: "POST", handler: listResources });
 http.route({ path: "/tools/resource.read", method: "POST", handler: readResource });
 http.route({ path: "/tools/resource.write", method: "POST", handler: writeResource });
+http.route({ path: "/runs/start", method: "POST", handler: startRun });
+http.route({ path: "/runs/event", method: "POST", handler: appendRunEvent });
+http.route({ path: "/runs/finish", method: "POST", handler: finishRun });
 
 export default http;

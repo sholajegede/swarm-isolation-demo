@@ -29,8 +29,8 @@ export type Target =
 export type ToolSpec = {
   /** Recorded in the audit row, e.g. "resource.read". */
   action: string;
-  /** The scope this action needs, e.g. "resource:read". */
-  requiredScope: string;
+  /** The scope this action needs, or null when any verified token will do. */
+  requiredScope: string | null;
   /** Work out which record is being reached for. Runs after the token is verified. */
   resolveTarget: (
     identity: VerifiedIdentity,
@@ -41,6 +41,7 @@ export type ToolSpec = {
     target: Target,
     body: Record<string, unknown>,
     identity: VerifiedIdentity,
+    mode: IsolationMode,
   ) => Promise<unknown>;
 };
 
@@ -157,7 +158,7 @@ export async function guard(
   }
 
   // 5. Only now does the work happen.
-  const data = await spec.perform(target, body, identity);
+  const data = await spec.perform(target, body, identity, mode);
 
   return json(
     {

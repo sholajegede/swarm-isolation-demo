@@ -15,20 +15,29 @@ const TENANTS = [
 ] as const;
 
 const RESOURCES: Record<string, Array<{ key: string; title: string; content: string }>> = {
+  /*
+   * Each tenant gets a `consolidated-summary` record. That is the only record
+   * the write worker is pointed at, so a run cannot overwrite the invoice the
+   * read workers depend on. Without that separation a run rewrites its own
+   * source data and the next run reads whatever the last one happened to say.
+   */
   "Tenant A": [
     { key: "invoice-001", title: "Invoice 001", content: "Tenant A - amount due 1,200.00" },
     { key: "contract-acme", title: "Acme contract", content: "Tenant A - renews March, 24 month term" },
     { key: "payroll-summary", title: "Payroll summary", content: "Tenant A - 34 staff, confidential" },
+    { key: "consolidated-summary", title: "Consolidated summary", content: "Tenant A - not yet written" },
   ],
   "Tenant B": [
     { key: "invoice-001", title: "Invoice 001", content: "Tenant B - amount due 9,900.00" },
     { key: "merger-notes", title: "Merger notes", content: "Tenant B - confidential, not for distribution" },
     { key: "customer-list", title: "Customer list", content: "Tenant B - 812 accounts" },
+    { key: "consolidated-summary", title: "Consolidated summary", content: "Tenant B - not yet written" },
   ],
   "Tenant C": [
     { key: "invoice-001", title: "Invoice 001", content: "Tenant C - amount due 450.00" },
     { key: "roadmap", title: "Product roadmap", content: "Tenant C - internal only" },
     { key: "incident-log", title: "Incident log", content: "Tenant C - 3 open incidents" },
+    { key: "consolidated-summary", title: "Consolidated summary", content: "Tenant C - not yet written" },
   ],
 };
 
