@@ -1,0 +1,58 @@
+#!/bin/sh
+#
+# Rejects any commit that credits an AI assistant as a contributor.
+#
+# This repository is authored by its owner. Nothing else gets attribution, in
+# the commit message or in the author identity.
+#
+# Enabled automatically by the "prepare" script in package.json, which runs
+# `git config core.hooksPath .githooks` on install. To enable by hand:
+#
+#     git config core.hooksPath .githooks
+
+msg_file="$1"
+
+ASSISTANTS='claude|anthropic|copilot|cursor|codex|chatgpt|openai|gemini|\[bot\]'
+
+fail() {
+	echo "" >&2
+	echo "  COMMIT REJECTED - .githooks/commit-msg" >&2
+	echo "" >&2
+	echo "  $1" >&2
+	echo "" >&2
+	echo "  This repository is authored by its owner only. Remove any AI" >&2
+	echo "  attribution - Co-Authored-By trailers, \"Generated with\" lines," >&2
+	echo "  assistant links, or the robot emoji - and commit again." >&2
+	echo "" >&2
+	exit 1
+}
+
+# 1. An AI Co-Authored-By trailer.
+if grep -iE '^[[:space:]]*co-authored-by:' "$msg_file" |
+	grep -qiE "$ASSISTANTS|noreply@"; then
+	fail "Found an AI Co-Authored-By trailer."
+fi
+
+# 2. An authorship credit line naming an assistant, e.g. "Generated with X".
+if grep -iE 'generated with|created with|co-?authored|written by|assisted by' "$msg_file" |
+	grep -qiE "$ASSISTANTS"; then
+	fail "Found an AI authorship credit line."
+fi
+
+# 3. A link to an assistant, which is how these footers usually appear.
+if grep -qiE '(claude\.com|anthropic\.com|github\.com/features/copilot|cursor\.(sh|com))' "$msg_file"; then
+	fail "Found a link to an AI assistant."
+fi
+
+# 4. The robot emoji used by AI commit footers.
+if grep -qF '🤖' "$msg_file"; then
+	fail "Found the robot emoji used by AI commit footers."
+fi
+
+# 5. Attribution hidden in the author identity rather than the message.
+author_ident=$(git var GIT_AUTHOR_IDENT 2>/dev/null || echo "")
+if printf '%s' "$author_ident" | grep -qiE "$ASSISTANTS|noreply@anthropic\.com"; then
+	fail "The commit author identity is an AI assistant: $author_ident"
+fi
+
+exit 0
