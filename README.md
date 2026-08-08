@@ -1,12 +1,27 @@
 # Swarm isolation demo
 
-An AI agent swarm reaches across tenant boundaries. Kinde organization-scoped
-identity stops it.
+This project runs a swarm of Kimi K3 AI agents for three separate customers. It
+shows one agent reading another customer's private data. It then shows how to
+stop that, and how to shut one customer down in an emergency.
 
 A swarm is a group of AI agents that work at the same time. Each customer is a
-tenant. This demo runs a swarm of Kimi K3 agents for three tenants. Each agent
-authenticates as its own Kinde machine-to-machine application. One server
-component decides every call the agents make.
+tenant. The agents in this demo read invoice records and write a summary for
+their own tenant.
+
+Three services do three jobs:
+
+- **Kimi K3** drives the agents. Moonshot serves the model. The agents choose
+  their own actions, and nobody scripts them.
+- **Kinde** proves who each agent is. One Kinde organization holds one tenant.
+  One machine-to-machine application holds one agent role in one tenant. Each
+  agent gets a token before it does anything, and that token names its tenant.
+- **Convex** stores the data, decides every call, and streams each step to the
+  browser as it happens.
+
+In short: Kimi K3 decides, Kinde proves, Convex enforces and records.
+
+Every agent call passes through one function on the server. That function reads
+the tenant from the token, not from the request. It then decides.
 
 The demo runs in one of two modes. The mode is the only difference between a
 leak and a containment.
@@ -28,23 +43,6 @@ Open the console and try three things:
    same call and records it.
 3. **Stop.** Start a run. Press the kill switch. That tenant stops. The others
    continue.
-
-The agents are real. They decide their own actions. Nobody scripts the reach
-across a tenant boundary.
-
-## How the parts fit
-
-Three services do three jobs:
-
-- **Kinde** proves who each agent is. One organization holds one tenant. One
-  machine-to-machine application holds one agent role in one tenant.
-- **Convex** stores the data, decides each call, and streams each step to the
-  browser.
-- **Kimi K3** drives the agents. The agents decide what to do.
-
-Short version: Kimi K3 decides, Kinde proves, Convex enforces and records.
-
-Read `HOW-IT-WORKS.md` for the full explanation in plain words.
 
 ## Requirements
 
@@ -246,9 +244,4 @@ variables again for the production deployment.
 The console cannot start a swarm on Vercel, because the route starts a Python
 process. Run the swarm from your own machine with `pnpm swarm`.
 
-## Documents
-
-- `HOW-IT-WORKS.md` explains the demo in plain words.
-- `BUILD_LOG.md` records each phase, its decisions, and what was checked.
-- `BUILD_RECORD.md` collects the whole build, including every mistake.
-- `CHANGELOG.md` lists the changes.
+`CHANGELOG.md` lists the changes.

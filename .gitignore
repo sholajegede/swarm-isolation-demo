@@ -48,6 +48,13 @@ __pycache__/
 # local agent settings
 .claude/
 
+# build notes and agent instructions, kept on this machine only
+AGENTS.md
+CLAUDE.md
+BUILD_LOG.md
+BUILD_RECORD.md
+HOW-IT-WORKS.md
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
