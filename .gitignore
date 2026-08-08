@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# convex local deployment state (not the generated types, which are committed)
+.convex/
+
 # python swarm service
 __pycache__/
 *.py[cod]

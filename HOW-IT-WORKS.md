@@ -120,9 +120,17 @@ lib/
   env.ts                 Reads configuration. Decides the isolation mode and
                          forces the safe default when it is missing.
 
-convex/                  The backend and the database        [coming next]
+convex/                  The backend and the database
   schema.ts              Table shapes: tenants, workers, resources, runs,
-                         run events, audit log.
+                         run events, audit log. Every tenant-owned table
+                         carries orgCode, the tenancy key.
+  lib/tenancy.ts         The boundary. Checks that the caller's tenant owns
+                         the record it asked for, and refuses if not.
+  resources.ts           Reading and writing tenant data. All internal, so
+                         nothing outside the backend can call in with a
+                         tenant of its choosing.
+  tenancy.test.ts        Proves tenant A cannot reach tenant B's data, even
+                         when it holds a real id for it.
 
 swarm/                   The Kimi K3 agents (Python)         [coming later]
 
@@ -179,7 +187,7 @@ happens again for them. Other tenants keep running, untouched.
 ## 7. What is built so far
 
 - [x] The app scaffold, configuration handling, and the health check
-- [ ] Database tables and the tenant isolation test
+- [x] Database tables and the tenant isolation test
 - [ ] Token checking against Kinde
 - [ ] The enforcement seam and the two modes
 - [ ] The Kimi K3 swarm
