@@ -134,6 +134,12 @@ convex/                  The backend and the database
   lib/kindeToken.ts      Checks a worker's token against Kinde's public keys
                          and reports which tenant it proves. A token that
                          fails any check is refused, never trusted.
+  lib/decide.ts          The rule itself, as one small function: given the
+                         mode, the caller and the target, allow or refuse.
+  lib/seam.ts            The single door. Verify, decide, write it down,
+                         answer. Nothing gets data without passing through.
+  settings.ts            Holds the mode, server-side only.
+  audit.ts               One row per decision, allow and deny alike.
   http.ts                The tool endpoints workers call. The tenant comes
                          from the token; the request only picks the record.
   seed.ts                Demo data for the three tenants.
@@ -143,6 +149,9 @@ scripts/
   verify-kinde-auth.ts   Live proof against real Kinde: a tenant A token is
                          refused tenant B's record, and edited tokens are
                          refused outright.
+  repro-cross-tenant.ts  Live proof of the two modes: the same worker makes
+                         the same call twice, and only the mode differs.
+                         Shared lets it through, per-org refuses it 403.
 
 swarm/                   The Kimi K3 agents (Python)         [coming later]
 
@@ -201,7 +210,7 @@ happens again for them. Other tenants keep running, untouched.
 - [x] The app scaffold, configuration handling, and the health check
 - [x] Database tables and the tenant isolation test
 - [x] Token checking against Kinde
-- [ ] The enforcement seam and the two modes
+- [x] The enforcement seam and the two modes
 - [ ] The Kimi K3 swarm
 - [ ] The emergency stop
 - [ ] The screen you watch it on

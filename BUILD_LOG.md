@@ -175,3 +175,102 @@ passing:
 - Scope is resolved off the token but not yet *enforced* — a `resource:read`
   token is not currently stopped from calling a write tool. That check, the two
   isolation modes and the audit trail are phase 3.
+
+---
+
+## Convex moved to a cloud deployment
+
+Between phases 2 and 3 the backend moved off the local anonymous deployment.
+
+- Project `shola-jegede/swarm-isolation-demo`, deployment
+  `fastidious-warthog-135`. Tools are served from
+  `https://fastidious-warthog-135.convex.site`.
+- Deployment environment re-set with `npx convex env set`, data re-seeded, and
+  `pnpm verify:auth` re-run against the cloud deployment: 14/14 still passing.
+- Nothing has to run locally now for the tool endpoints to answer.
+
+---
+
+## Phase 3 — Enforcement seam + the two modes
+
+**Built**
+
+- `convex/lib/decide.ts` — the rule, as a pure function. No network, no
+  database, no token. It takes the mode, the acting tenant, its scopes, the
+  scope required, and the tenant that owns the target, and returns
+  allow/deny plus a reason. Everything around it is plumbing.
+- `convex/lib/seam.ts` — the single door. Fixed order: verify the token,
+  resolve the mode from server state, find who owns the record, decide, write
+  the audit row, answer. Every non-allow exit runs through one `refuse` helper,
+  so there is no path that returns data without a recorded decision.
+- `convex/settings.ts` — the isolation mode, held server-side. An operator row
+  wins, then the deployment environment, then `per-org`. Both functions are
+  internal, so no worker and no browser can set it.
+- `convex/audit.ts` — one row per decision, written *before* the caller is
+  answered so a client that hangs up cannot lose a refusal.
+- `convex/resources.ts` — added `seamLoad*` and `seamWrite`, which deliberately
+  do not check ownership. They exist so the seam can learn who owns a record and
+  then make the decision itself, in one place.
+- `/tools/resource.write` added, so scope is enforced against something real.
+- `scripts/repro-cross-tenant.ts` (`pnpm repro:cross-tenant`).
+
+**Decisions**
+
+- The checks run boundary-outwards: tenant first, then permission. A
+  cross-tenant call with the wrong scope reports `cross_org`, because the tenant
+  boundary is the more serious of the two.
+- `shared` skips both checks rather than only the org check. The shortcut being
+  modelled is one credential for the whole swarm, and such a credential belongs
+  to no tenant and carries every permission, so neither check has anything to
+  bite on.
+- A request may name `targetOrgCode` to reach for another tenant. Naming a
+  tenant grants nothing — it only states what is being reached for, and the seam
+  still decides. This is what the two modes disagree about.
+- `x-correlation-id` and `x-worker-label` are tracing labels only and never
+  reach the decision. Every response carries the correlation id back, including
+  refusals.
+- Token failures are audited too, attributed to `unknown`. There is no verified
+  tenant to attribute them to, and inventing one would put a fiction in the
+  trail.
+- The mode is changed by an operator through the Convex CLI, not over HTTP.
+  That is what keeps it server-decided.
+
+**Checked live, before saving**
+
+`pnpm repro:cross-tenant` against the cloud deployment — 12 checks, all passing.
+The same worker, the same record, the same call, twice:
+
+- **shared** — tenant A reads tenant B's `merger-notes` and gets
+  `Tenant B - confidential, not for distribution`, HTTP 200, `crossOrg: true`.
+  The audit row is `allow / cross_org_allowed`, actor `org_2606b8199462b`,
+  target `org_364dd8200a3d3`. The breach is recorded as it happens.
+- **per-org** — identical call, `HTTP 403 cross_org`, body
+  `{"ok":false,"reason":"cross_org","correlationId":"2f0f21d6-…","isolationMode":"per-org"}`.
+  No tenant B content. Audit row `deny / cross_org` under the same correlation
+  id.
+- **least privilege** — a `resource:read` worker writing to its *own* tenant is
+  refused `insufficient_scope`; the `resource:write` worker succeeds; the write
+  worker reaching into tenant B is refused `cross_org`. All three land on one
+  correlation id, in order: `deny/insufficient_scope, allow/ok, deny/cross_org`.
+
+Two modes differing on a byte-identical call is the proof that the check is
+load-bearing, not decoration.
+
+`convex/decide.test.ts` adds 10 unit tests over the rule itself, including that
+only an exact `shared` is shared — `""`, `"sharedd"`, `"off"`, `"0"`, `null` and
+`undefined` all resolve to `per-org`.
+
+`pnpm typecheck`, `pnpm lint`, `pnpm test` (16/16) and `pnpm build` clean.
+
+**A regression found and fixed during the gate**
+
+The first run of `repro:cross-tenant` broke `verify:auth`. Not a seam fault: the
+repro's successful write overwrote a seeded record, so a later assertion about
+seed content failed. The script now records the original content and restores it
+however the run ends. Both scripts were then run in both orders, twice, and pass
+independently. A proof script that leaves the data different from how it found
+it makes the next script lie.
+
+**Open**
+
+- Kinde's 24 hour token lifetime, still outstanding from phase 2.

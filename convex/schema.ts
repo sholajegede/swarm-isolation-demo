@@ -19,6 +19,20 @@ export const workerRole = v.union(
 );
 
 export default defineSchema({
+  /**
+   * Server-held settings. The isolation mode lives here so an operator can
+   * change it at runtime, seeded from the deployment environment.
+   *
+   * This is still server-decided: the row is written by an internal mutation
+   * only. No worker and no browser can set it, and no request body is ever
+   * consulted for it.
+   */
+  settings: defineTable({
+    key: v.string(),
+    value: v.string(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
+
   /** One row per tenant. Mirrors a Kinde organization. */
   tenants: defineTable({
     orgCode: v.string(),

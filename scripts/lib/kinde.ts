@@ -76,11 +76,15 @@ export async function callTool(
   path: string,
   token: string | null,
   body: Record<string, unknown> = {},
+  trace: { correlationId?: string; workerLabel?: string } = {},
 ): Promise<ToolResponse> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (token !== null) {
     headers.authorization = `Bearer ${token}`;
   }
+  // Tracing labels only. The seam never lets these influence a decision.
+  if (trace.correlationId) headers["x-correlation-id"] = trace.correlationId;
+  if (trace.workerLabel) headers["x-worker-label"] = trace.workerLabel;
 
   const response = await fetch(`${toolsBaseUrl()}${path}`, {
     method: "POST",

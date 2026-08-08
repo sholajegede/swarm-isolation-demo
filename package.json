@@ -14,7 +14,8 @@
     "convex:dev": "convex dev",
     "convex:codegen": "convex codegen",
     "seed": "convex run seed:seedDemo",
-    "verify:auth": "tsx scripts/verify-kinde-auth.ts"
+    "verify:auth": "tsx scripts/verify-kinde-auth.ts",
+    "repro:cross-tenant": "tsx scripts/repro-cross-tenant.ts"
   },
   "dependencies": {
     "convex": "^1.43.0",

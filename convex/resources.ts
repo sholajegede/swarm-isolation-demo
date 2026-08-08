@@ -79,6 +79,49 @@ export const create = internalMutation({
     }),
 });
 
+/*
+ * ---------------------------------------------------------------------------
+ * Seam-only loaders.
+ *
+ * These deliberately do NOT check ownership. They exist so the enforcement
+ * seam can find out which tenant owns a record and then make the decision
+ * itself, in one place, according to the mode in force.
+ *
+ * Nothing but the seam may call them. Everything else uses the guarded
+ * accessors above, which refuse a cross-tenant record outright.
+ * ---------------------------------------------------------------------------
+ */
+
+/** Load by id, ownership unchecked. Seam only. */
+export const seamLoadById = internalQuery({
+  args: { resourceId: v.id("resources") },
+  handler: async (ctx, { resourceId }) => ctx.db.get(resourceId),
+});
+
+/** Load by tenant and key, ownership unchecked. Seam only. */
+export const seamLoadByKey = internalQuery({
+  args: { orgCode: v.string(), key: v.string() },
+  handler: async (ctx, { orgCode, key }) =>
+    ctx.db
+      .query("resources")
+      .withIndex("by_org_key", (q) => q.eq("orgCode", orgCode).eq("key", key))
+      .unique(),
+});
+
+/**
+ * Write to a record the seam has already decided may be written. Seam only.
+ *
+ * The decision is not repeated here, because repeating it would put a second
+ * copy of the rule in a second place. There is one rule, in `decide`.
+ */
+export const seamWrite = internalMutation({
+  args: { resourceId: v.id("resources"), content: v.string() },
+  handler: async (ctx, { resourceId, content }) => {
+    await ctx.db.patch(resourceId, { content, updatedAt: Date.now() });
+    return resourceId;
+  },
+});
+
 /** Update a resource, but only one the acting tenant owns. */
 export const update = internalMutation({
   args: {

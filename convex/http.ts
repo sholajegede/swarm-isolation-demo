@@ -1,18 +1,17 @@
 import { httpRouter } from "convex/server";
 
 import { internal } from "./_generated/api";
-import { httpAction } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
+import { httpAction, type ActionCtx } from "./_generated/server";
 import { TokenError, verifyAccessToken } from "./lib/kindeToken";
-import { denyReasonOf } from "./lib/tenancy";
+import { guard, type Target } from "./lib/seam";
 
 /**
  * The tool endpoints a worker calls.
  *
- * Workers never reach the database. They come through here, and the acting
- * tenant is taken from the verified token rather than from anything they sent.
- *
- * Phase 2 establishes verification and tenant resolution. The isolation modes,
- * the scope check and the audit trail land on top of this in phase 3.
+ * Workers never reach the database. Each data tool below hands its call to
+ * `guard`, which is the single place where a call is allowed or refused and
+ * the only place that writes the audit trail.
  */
 
 function json(body: unknown, status: number) {
@@ -22,11 +21,10 @@ function json(body: unknown, status: number) {
   });
 }
 
-/** Anything that is not an allow ends up here, so there is one refusal path. */
-function refuse(reason: string, status: number) {
-  return json({ ok: false, reason }, status);
-}
-
+/**
+ * Identity echo. Reaches no tenant data, so there is nothing to enforce and it
+ * stays outside the seam. It still requires a verified token.
+ */
 const whoami = httpAction(async (_ctx, request) => {
   try {
     const identity = await verifyAccessToken(request.headers.get("authorization"));
@@ -41,92 +39,107 @@ const whoami = httpAction(async (_ctx, request) => {
       200,
     );
   } catch (error) {
-    if (error instanceof TokenError) {
-      return refuse(error.reason, 401);
-    }
-    // An unexpected failure is still a refusal. Never fall through to allow.
-    return refuse("verification_failed", 401);
-  }
-});
-
-const listResources = httpAction(async (ctx, request) => {
-  let identity;
-  try {
-    identity = await verifyAccessToken(request.headers.get("authorization"));
-  } catch (error) {
-    return refuse(error instanceof TokenError ? error.reason : "verification_failed", 401);
-  }
-
-  const rows = await ctx.runQuery(internal.resources.listForOrg, {
-    actorOrgCode: identity.orgCode,
-  });
-
-  return json(
-    {
-      ok: true,
-      actorOrgCode: identity.orgCode,
-      resources: rows.map((r) => ({ id: r._id, key: r.key, title: r.title })),
-    },
-    200,
-  );
-});
-
-const readResource = httpAction(async (ctx, request) => {
-  let identity;
-  try {
-    identity = await verifyAccessToken(request.headers.get("authorization"));
-  } catch (error) {
-    return refuse(error instanceof TokenError ? error.reason : "verification_failed", 401);
-  }
-
-  let body: { key?: string; resourceId?: string };
-  try {
-    body = await request.json();
-  } catch {
-    return refuse("malformed_body", 400);
-  }
-
-  try {
-    // The acting tenant is the one on the token. The body only chooses which
-    // record is being asked for, never who is asking.
-    const doc = body.resourceId
-      ? await ctx.runQuery(internal.resources.readById, {
-          actorOrgCode: identity.orgCode,
-          resourceId: body.resourceId as never,
-        })
-      : body.key
-        ? await ctx.runQuery(internal.resources.readByKey, {
-            actorOrgCode: identity.orgCode,
-            key: body.key,
-          })
-        : null;
-
-    if (doc === null) {
-      return refuse("missing_selector", 400);
-    }
-
     return json(
-      {
-        ok: true,
-        actorOrgCode: identity.orgCode,
-        resource: { key: doc.key, title: doc.title, content: doc.content },
-      },
-      200,
+      { ok: false, reason: error instanceof TokenError ? error.reason : "verification_failed" },
+      401,
     );
-  } catch (error) {
-    const reason = denyReasonOf(error);
-    if (reason) {
-      return refuse(reason, 403);
-    }
-    // Includes a malformed document id, which Convex rejects at the validator.
-    return refuse("bad_request", 400);
   }
 });
+
+/**
+ * Find the record a call is reaching for.
+ *
+ * `targetOrgCode` lets a caller name a tenant other than its own. That is the
+ * point: it is how a worker reaches across, and what the two modes disagree
+ * about. Naming a tenant does not grant anything - the seam still decides.
+ */
+async function resolveResource(
+  ctx: ActionCtx,
+  identity: { orgCode: string },
+  body: Record<string, unknown>,
+): Promise<Target> {
+  if (typeof body.resourceId === "string") {
+    const doc = await ctx.runQuery(internal.resources.seamLoadById, {
+      resourceId: body.resourceId as Id<"resources">,
+    });
+    return doc ? { kind: "record", doc } : { kind: "missing" };
+  }
+
+  if (typeof body.key === "string") {
+    const orgCode =
+      typeof body.targetOrgCode === "string" && body.targetOrgCode.trim()
+        ? body.targetOrgCode.trim()
+        : identity.orgCode;
+    const doc = await ctx.runQuery(internal.resources.seamLoadByKey, {
+      orgCode,
+      key: body.key,
+    });
+    return doc ? { kind: "record", doc } : { kind: "missing", key: body.key };
+  }
+
+  throw new Error("no selector supplied");
+}
+
+const listResources = httpAction(async (ctx, request) =>
+  guard(ctx, request, {
+    action: "resource.list",
+    requiredScope: "resource:read",
+    // A listing only ever returns the caller's own rows, so it reaches across
+    // no boundary and has no target.
+    resolveTarget: async () => ({ kind: "none" }),
+    perform: async (_target, _body, identity) => {
+      const rows = await ctx.runQuery(internal.resources.listForOrg, {
+        actorOrgCode: identity.orgCode,
+      });
+      return {
+        resources: rows.map((r) => ({ id: r._id, key: r.key, title: r.title })),
+      };
+    },
+  }),
+);
+
+const readResource = httpAction(async (ctx, request) =>
+  guard(ctx, request, {
+    action: "resource.read",
+    requiredScope: "resource:read",
+    resolveTarget: (identity, body) => resolveResource(ctx, identity, body),
+    perform: async (target) => {
+      const doc = (target as { doc: Doc<"resources"> }).doc;
+      return {
+        resource: {
+          id: doc._id,
+          key: doc.key,
+          title: doc.title,
+          content: doc.content,
+          ownerOrgCode: doc.orgCode,
+        },
+      };
+    },
+  }),
+);
+
+const writeResource = httpAction(async (ctx, request) =>
+  guard(ctx, request, {
+    action: "resource.write",
+    requiredScope: "resource:write",
+    resolveTarget: (identity, body) => resolveResource(ctx, identity, body),
+    perform: async (target, body) => {
+      const doc = (target as { doc: Doc<"resources"> }).doc;
+      const content = typeof body.content === "string" ? body.content : "";
+      await ctx.runMutation(internal.resources.seamWrite, {
+        resourceId: doc._id,
+        content,
+      });
+      return { written: { id: doc._id, key: doc.key, ownerOrgCode: doc.orgCode } };
+    },
+  }),
+);
 
 const http = httpRouter();
 
 http.route({ path: "/tools/whoami", method: "POST", handler: whoami });
 http.route({ path: "/tools/resource.list", method: "POST", handler: listResources });
 http.route({ path: "/tools/resource.read", method: "POST", handler: readResource });
+http.route({ path: "/tools/resource.write", method: "POST", handler: writeResource });
 
 export default http;
