@@ -103,3 +103,75 @@ phase was saved.
 
 - The tests prove the data layer isolates. They do not yet prove the *system*
   isolates, because nothing verifies who the caller is. That is phase 2.
+
+---
+
+## Phase 2 — Kinde auth foundation (live)
+
+**Kinde setup in use** (codes are not secrets; credentials live only in `.env.local`)
+
+- Issuer: `https://devrelstudio.kinde.com`
+- API audience: `swarm-demo-api`, scopes `resource:read` and `resource:write`
+- Organizations: Tenant A `org_2606b8199462b`, Tenant B `org_364dd8200a3d3`,
+  Tenant C `org_0c39cb2010b01`
+- Seven M2M apps: a reader and a writer inside each organization, plus one
+  Management API app held back for phase 5.
+
+**Built**
+
+- `convex/lib/kindeToken.ts` — verifies a bearer token against Kinde's JWKS and
+  returns the identity it proves: `orgCode`, `scopes`, `clientId`, `tokenId`.
+  Signature, issuer, audience and expiry are all checked, `RS256` is pinned, and
+  a token carrying no `org_code` is refused rather than guessed at. Every path
+  out of the module either returns a verified identity or throws.
+- `convex/http.ts` — the tool endpoints a worker calls: `/tools/whoami`,
+  `/tools/resource.list`, `/tools/resource.read`. The acting tenant comes from
+  the token; the request body only chooses which record is wanted.
+- `convex/seed.ts` — three tenants with obviously-theirs data, org codes read
+  from the deployment environment so the seed cannot name a tenant that was
+  never configured.
+- `scripts/verify-kinde-auth.ts` (`pnpm verify:auth`) — the live gate.
+
+**Decisions**
+
+- One JWKS fetcher per issuer, cached per isolate, so verification does not call
+  Kinde on every request. `jose` refetches only on an unknown key id.
+- The refusal body is `{ ok: false, reason }` and nothing else. It does not name
+  the tenant that owns the record; that goes to the audit log, server-side.
+- Convex functions read their own environment, so `KINDE_ISSUER_URL`,
+  `KINDE_AUDIENCE`, `ISOLATION_MODE` and the org codes are set on the
+  deployment with `npx convex env set`, not inherited from `.env.local`.
+
+**Checked live, before saving**
+
+`pnpm verify:auth` against real Kinde and the running backend — 14 checks, all
+passing:
+
+- A real tenant A token resolves to `org_2606b8199462b` with exactly
+  `resource:read`; the tenant A writer carries exactly `resource:write`; the
+  tenant B token resolves to tenant B.
+- Tenant A's listing and tenant B's listing have zero overlap.
+- **The gate.** Tenant A, holding a *real* id for tenant B's `merger-notes`
+  record obtained from tenant B's own authorised listing, is refused with
+  `HTTP 403 cross_org`. The response body is `{"ok":false,"reason":"cross_org"}`
+  — no content, and no mention of the owning tenant.
+- Tenant B reads that same record through the same code path and gets it, so
+  the refusal is about ownership rather than a broken read.
+- A key that exists only in tenant B is `not_found` for tenant A, while
+  `invoice-001`, which exists in both, resolves to the caller's own row.
+- Fails closed on: no Authorization header (`missing_token`), a non-token
+  (`malformed_token`), a token with one character flipped in the signature
+  (`invalid_token`), and a token whose `org_code` was edited to tenant B
+  (`invalid_token`). The last two are what prove the signature is genuinely
+  checked — if verification were being skipped they would have returned 200.
+
+`pnpm typecheck`, `pnpm lint`, `pnpm test` (6/6) and `pnpm build` all clean.
+
+**Open**
+
+- Kinde issues these M2M tokens with a 24 hour lifetime. Phase 7 calls for
+  short-lived tokens; that is a per-application setting in Kinde and should be
+  reduced before the production pass is claimed done.
+- Scope is resolved off the token but not yet *enforced* — a `resource:read`
+  token is not currently stopped from calling a write tool. That check, the two
+  isolation modes and the audit trail are phase 3.

@@ -131,6 +131,18 @@ convex/                  The backend and the database
                          tenant of its choosing.
   tenancy.test.ts        Proves tenant A cannot reach tenant B's data, even
                          when it holds a real id for it.
+  lib/kindeToken.ts      Checks a worker's token against Kinde's public keys
+                         and reports which tenant it proves. A token that
+                         fails any check is refused, never trusted.
+  http.ts                The tool endpoints workers call. The tenant comes
+                         from the token; the request only picks the record.
+  seed.ts                Demo data for the three tenants.
+
+scripts/
+  lib/kinde.ts           Gets a worker token the way a worker does.
+  verify-kinde-auth.ts   Live proof against real Kinde: a tenant A token is
+                         refused tenant B's record, and edited tokens are
+                         refused outright.
 
 swarm/                   The Kimi K3 agents (Python)         [coming later]
 
@@ -188,7 +200,7 @@ happens again for them. Other tenants keep running, untouched.
 
 - [x] The app scaffold, configuration handling, and the health check
 - [x] Database tables and the tenant isolation test
-- [ ] Token checking against Kinde
+- [x] Token checking against Kinde
 - [ ] The enforcement seam and the two modes
 - [ ] The Kimi K3 swarm
 - [ ] The emergency stop

@@ -8,8 +8,11 @@
  * @module
  */
 
+import type * as http from "../http.js";
+import type * as lib_kindeToken from "../lib/kindeToken.js";
 import type * as lib_tenancy from "../lib/tenancy.js";
 import type * as resources from "../resources.js";
+import type * as seed from "../seed.js";
 
 import type {
   ApiFromModules,
@@ -18,8 +21,11 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  http: typeof http;
+  "lib/kindeToken": typeof lib_kindeToken;
   "lib/tenancy": typeof lib_tenancy;
   resources: typeof resources;
+  seed: typeof seed;
 }>;
 
 /**

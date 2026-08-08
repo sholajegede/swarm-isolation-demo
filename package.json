@@ -12,7 +12,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "convex:dev": "convex dev",
-    "convex:codegen": "convex codegen"
+    "convex:codegen": "convex codegen",
+    "seed": "convex run seed:seedDemo",
+    "verify:auth": "tsx scripts/verify-kinde-auth.ts"
   },
   "dependencies": {
     "convex": "^1.43.0",
@@ -28,9 +30,11 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "convex-test": "^0.0.55",
+    "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.11",
     "typescript": "^5",
     "vitest": "^4.1.10"
   },
