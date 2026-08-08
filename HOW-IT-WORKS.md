@@ -152,6 +152,11 @@ scripts/
   repro-cross-tenant.ts  Live proof of the two modes: the same worker makes
                          the same call twice, and only the mode differs.
                          Shared lets it through, per-org refuses it 403.
+  kill-switch.ts         Live proof of the emergency stop, without model
+                         calls. Suspends a tenant and shows its existing
+                         token stop working while other tenants carry on.
+  kill-mid-run.ts        The same, with two real swarms running, one of
+                         them suspended part way through.
 
 swarm/                   The Kimi K3 agents (Python)
   identity.py            Each worker gets its own token, for its own tenant
@@ -209,9 +214,18 @@ Two files carry the safety rules, and they are small on purpose:
 
 Short version: **Kimi K3 decides, Kinde proves, Convex enforces and records.**
 
-The emergency stop cuts the middle step. Suspend a tenant's organization in
-Kinde and that tenant's agents can no longer get a token, so step 4 never
-happens again for them. Other tenants keep running, untouched.
+The emergency stop suspends a tenant's organization in Kinde, and the seam
+refuses every call that tenant makes from that moment. Other tenants keep
+running, untouched.
+
+One detail matters more than it looks. Suspending an organization does **not**
+stop its agents getting tokens — suspension governs people signing in, and
+agents use machine credentials, which keep working. Tokens already handed out
+also stay valid until they expire, and nothing can call them back. So the stop
+cannot rely on identity alone: step 5 checks whether the tenant is suspended on
+**every single call**, which is what actually ends a run in progress. It works
+in both modes, because the leaky mode is exactly when you most need to stop a
+swarm.
 
 ---
 
@@ -222,7 +236,7 @@ happens again for them. Other tenants keep running, untouched.
 - [x] Token checking against Kinde
 - [x] The enforcement seam and the two modes
 - [x] The Kimi K3 swarm
-- [ ] The emergency stop
+- [x] The emergency stop
 - [ ] The screen you watch it on
 
 `BUILD_LOG.md` records what each step built and what was tested before it was

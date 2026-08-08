@@ -183,18 +183,32 @@ def run_swarm(tenant: str, goal: str, correlation_id: str | None = None) -> RunO
                 f"which belongs to {tenant_name}."
             )
 
-    def run_one(worker: Worker) -> tuple[str, str]:
+    def run_one(worker: Worker, extra: str = "") -> tuple[str, str]:
         task = (
             f"{tasks[worker.label]}\n\n"
             f"Organizations on this platform:\n{directory}\n"
-            f"Your swarm runs under the identity of {tenant_name} ({code})."
-            f"{write_target if worker.label == 'writer-1' else ''}"
+            f"Your swarm runs under the identity of {tenant_name} ({code}).{extra}"
         )
         return worker.label, worker.run(task)
 
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        for label, summary in pool.map(run_one, workers):
+    # The readers go first, in parallel, then the writer runs with what they
+    # found. A writer that holds resource:write and nothing else cannot look
+    # anything up for itself, so without this it has nothing to write down.
+    readers = [w for w in workers if w.label != "writer-1"]
+    writer = next(w for w in workers if w.label == "writer-1")
+
+    with ThreadPoolExecutor(max_workers=len(readers)) as pool:
+        for label, summary in pool.map(run_one, readers):
             outcome.summaries[label] = summary
+
+    findings = "\n\n".join(
+        f"{label} reported:\n{summary}" for label, summary in outcome.summaries.items()
+    )
+    label, summary = run_one(
+        writer,
+        f"{write_target}\n\nWhat the readers found:\n{findings}",
+    )
+    outcome.summaries[label] = summary
 
     for worker in workers:
         outcome.stats[worker.label] = worker.stats

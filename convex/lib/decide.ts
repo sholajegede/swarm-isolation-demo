@@ -22,6 +22,7 @@ export const DENY = {
   crossOrg: "cross_org",
   insufficientScope: "insufficient_scope",
   notFound: "not_found",
+  suspended: "organization_suspended",
 } as const;
 
 export type DecisionInput = {
@@ -42,6 +43,15 @@ export type DecisionInput = {
    * targets no particular record (a listing of the caller's own data).
    */
   targetOrgCode: string | null;
+  /**
+   * Whether the acting tenant's organization is suspended.
+   *
+   * Kinde keeps issuing M2M tokens for a suspended organization - suspension
+   * governs people signing in, not application credentials - so a token alone
+   * proves nothing about whether the tenant is still allowed to operate. The
+   * check has to happen here, on every call.
+   */
+  actorSuspended: boolean;
 };
 
 export type Decision = {
@@ -59,6 +69,13 @@ export type Decision = {
 export function decide(input: DecisionInput): Decision {
   const crossOrg =
     input.targetOrgCode !== null && input.targetOrgCode !== input.actorOrgCode;
+
+  // Checked before the mode is consulted, and so applies in both. A kill
+  // switch that only worked in the enforcing mode would be no kill switch at
+  // all - the leaky mode is exactly when you most need to stop a swarm.
+  if (input.actorSuspended) {
+    return { allow: false, reason: DENY.suspended, crossOrg };
+  }
 
   if (input.mode === "per-org") {
     if (crossOrg) {

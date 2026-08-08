@@ -15,7 +15,10 @@
     "convex:codegen": "convex codegen",
     "seed": "convex run seed:seedDemo",
     "verify:auth": "tsx scripts/verify-kinde-auth.ts",
-    "repro:cross-tenant": "tsx scripts/repro-cross-tenant.ts"
+    "repro:cross-tenant": "tsx scripts/repro-cross-tenant.ts",
+    "kill-switch": "tsx scripts/kill-switch.ts",
+    "kill-switch:live": "tsx scripts/kill-mid-run.ts",
+    "swarm": "./.venv/bin/python -m swarm"
   },
   "dependencies": {
     "convex": "^1.43.0",

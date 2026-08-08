@@ -5,6 +5,31 @@ loadEnv({ path: ".env.local", quiet: true });
 export type Tenant = "A" | "B" | "C";
 export type Role = "READER" | "WRITER";
 
+/**
+ * Retry a request that failed to complete at all.
+ *
+ * Only connection-level faults are retried. An HTTP response of any status is
+ * returned untouched, because a refusal is an answer and retrying it would
+ * both hide the result and repeat the call.
+ */
+async function withRetry(
+  send: () => Promise<Response>,
+  attempts = 3,
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await send();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastError;
+}
+
 export function required(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
@@ -43,11 +68,13 @@ export async function workerToken(tenant: Tenant, role: Role): Promise<string> {
     audience: required("KINDE_AUDIENCE"),
   });
 
-  const response = await fetch(required("KINDE_M2M_TOKEN_URL"), {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body,
-  });
+  const response = await withRetry(() =>
+    fetch(required("KINDE_M2M_TOKEN_URL"), {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body,
+    }),
+  );
 
   if (!response.ok) {
     throw new Error(
@@ -86,11 +113,13 @@ export async function callTool(
   if (trace.correlationId) headers["x-correlation-id"] = trace.correlationId;
   if (trace.workerLabel) headers["x-worker-label"] = trace.workerLabel;
 
-  const response = await fetch(`${toolsBaseUrl()}${path}`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
+  const response = await withRetry(() =>
+    fetch(`${toolsBaseUrl()}${path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    }),
+  );
 
   let parsed: Record<string, unknown>;
   try {

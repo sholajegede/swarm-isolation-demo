@@ -9,6 +9,7 @@ const call = (
   mode: IsolationMode,
   targetOrgCode: string | null,
   scopes: string[] = ["resource:read"],
+  actorSuspended = false,
 ) =>
   decide({
     mode,
@@ -16,6 +17,7 @@ const call = (
     actorScopes: scopes,
     requiredScope: "resource:read",
     targetOrgCode,
+    actorSuspended,
   });
 
 describe("the decision rule", () => {
@@ -67,6 +69,33 @@ describe("the decision rule", () => {
 
   test("per-org still needs the scope when there is no target", () => {
     expect(call("per-org", null, []).reason).toBe(DENY.insufficientScope);
+  });
+});
+
+describe("a suspended tenant", () => {
+  test("is refused in per-org mode, even for its own data", () => {
+    const d = call("per-org", A, ["resource:read"], true);
+    expect(d.allow).toBe(false);
+    expect(d.reason).toBe(DENY.suspended);
+  });
+
+  test("is refused in shared mode too", () => {
+    // A kill switch that only worked in the enforcing mode would be useless:
+    // the leaky mode is precisely when a swarm most needs stopping.
+    const d = call("shared", B, ["resource:read"], true);
+    expect(d.allow).toBe(false);
+    expect(d.reason).toBe(DENY.suspended);
+  });
+
+  test("is refused whatever scope it holds", () => {
+    expect(call("shared", null, ["resource:read", "resource:write"], true).allow).toBe(
+      false,
+    );
+  });
+
+  test("suspension outranks a cross-tenant reach", () => {
+    // Both are true; the tenant being stopped is the more fundamental fact.
+    expect(call("per-org", B, ["resource:read"], true).reason).toBe(DENY.suspended);
   });
 });
 

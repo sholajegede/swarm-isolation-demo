@@ -368,3 +368,107 @@ timeline logging is non-fatal — losing a log line must not take down a worker.
 
 - Kinde's 24 hour token lifetime, still outstanding.
 - Worker summaries occasionally truncate at the token limit.
+
+---
+
+## Phase 5 — Kill switch (live)
+
+**What the plan assumed, and what is actually true**
+
+The plan expected that suspending a Kinde organization would stop its workers,
+by their tokens being refused or becoming invalid. That was checked before
+anything was built on it, and it is not what happens:
+
+```
+suspend Tenant C   -> is_suspended: true
+token endpoint     -> HTTP 200      (still issues M2M tokens)
+```
+
+Kinde suspension governs people signing in. Machine-to-machine credentials are
+application-level and keep working, and tokens already issued stay
+cryptographically valid until they expire — nothing can recall them. A kill
+switch resting on that assumption would have looked correct and done nothing.
+
+So suspension is enforced server-side, on every call.
+
+**Built**
+
+- `convex/lib/kindeManagement.ts` — reads and writes organization state through
+  the Kinde Management API. It refuses to act on any org code outside this
+  deployment's three tenants, so a wrong code cannot suspend an unrelated
+  organization in the same Kinde account.
+- `convex/tenants.ts` — the enforcement copy of suspension state, which the seam
+  reads without a network call. A tenant it has never heard of counts as
+  suspended.
+- `convex/killSwitch.ts` — `suspend`, `unsuspend`, and `sync` for changes made
+  in the Kinde dashboard. Kinde is updated first, so the authority and the
+  enforcement copy never disagree in the dangerous direction; unsuspend clears
+  the local copy only after Kinde has agreed, so a failed call leaves the tenant
+  stopped rather than half-released.
+- Suspension is part of `decide`, checked before the mode is consulted, so it
+  applies in **both** modes. A kill switch that only worked in the enforcing
+  mode would be no kill switch at all — the leaky mode is exactly when a swarm
+  most needs stopping.
+
+**Checked live, before saving**
+
+`pnpm kill-switch` — 10 checks, all passing:
+
+- The token tenant A was already holding stops working the moment the switch is
+  thrown: `403 organization_suspended`, no records in the response.
+- Kinde still issues that tenant fresh tokens (`HTTP 200`), and those are
+  refused too. Both facts are asserted, so the awkward one cannot quietly stop
+  being true.
+- Tenant B is untouched, before and after.
+- A suspended tenant is stopped in `shared` mode as well.
+- The cutoff appears in the audit trail under its correlation id.
+- Lifting the suspension restores service.
+
+`pnpm kill-switch:live` — the real thing. Two Kimi K3 swarms start at once, and
+tenant A is suspended twelve seconds in, mid-run:
+
+```
+tenant A audit: {"ok": 2, "organization_suspended": 17}
+tenant B audit: {"ok": 39}
+tenant B run status: completed
+```
+
+Tenant A did real work, then stopped where it stood. Tenant B ran to a normal
+finish and was never refused once.
+
+**Fixed along the way**
+
+- **Model concurrency.** The first mid-run attempt put six workers against an
+  account that allows three requests in flight, and several died on HTTP 429.
+  Calls are now gated by a semaphore and rate limits are retried with backoff —
+  a rate limit is a "not now", not a "no" — and the two-swarm script holds each
+  process to one in-flight call.
+- **The writer had nothing to write.** All three workers ran in parallel, so the
+  write worker, which holds `resource:write` and no read tools, never saw what
+  the readers found and said so plainly. Readers now run first and the writer
+  receives their findings. The record it produced afterwards reads: *"Tenant A
+  invoice-001 shows amount due 1,200.00; Tenant B and Tenant C figures are
+  unavailable because cross-org reads were refused (reason: cross_org)."*
+- **Transient network faults.** One `verify:auth` run aborted on a failed fetch.
+  The TypeScript scripts now retry connection-level failures only; any HTTP
+  response is returned untouched, because a refusal is an answer and retrying it
+  would both hide the result and repeat the call. `repro:cross-tenant` then ran
+  three times in a row without a failure.
+
+**Token lifetime, resolved as far as it can be here**
+
+The Management API application holds `read:organizations` and
+`update:organizations`. `GET /api/v1/applications` returns `403`, so token
+lifetime cannot be changed from this codebase — it is a per-application setting
+in the Kinde dashboard.
+
+Its significance has changed, though. Because suspension never invalidated
+tokens in the first place, a shorter lifetime would not have made the kill
+switch work; the server-side check is what does that, and it takes effect
+immediately at any lifetime. What a shorter lifetime still buys is a smaller
+window for a token that leaks some other way. Worth doing, no longer load
+bearing.
+
+**Open**
+
+- Token lifetime, above: a dashboard change, not a code change.

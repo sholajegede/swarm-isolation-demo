@@ -50,7 +50,7 @@ def main() -> int:
             )
             if stats.denial_reasons:
                 print(f"    refusals: {', '.join(sorted(set(stats.denial_reasons)))}")
-        print(f"    {summary[:400]}")
+        print(f"    {summary[:700]}")
 
     totals = outcome.totals
     print("\ntotals")

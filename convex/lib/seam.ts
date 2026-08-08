@@ -116,7 +116,13 @@ export async function guard(
     body = {};
   }
 
-  // 2. What is being reached for, and who owns it.
+  // 2. Is this tenant still allowed to operate at all? Asked before anything
+  // else, because a suspended tenant gets nothing, not even its own data.
+  const actorSuspended: boolean = await ctx.runQuery(internal.tenants.isSuspended, {
+    orgCode: identity.orgCode,
+  });
+
+  // 3. What is being reached for, and who owns it.
   let target: Target;
   try {
     target = await spec.resolveTarget(identity, body);
@@ -131,16 +137,17 @@ export async function guard(
   const targetOrgCode = target.kind === "record" ? target.doc.orgCode : null;
   const resourceKey = target.kind === "record" ? target.doc.key : undefined;
 
-  // 3. The decision.
+  // 4. The decision.
   const decision = decide({
     mode,
     actorOrgCode: identity.orgCode,
     actorScopes: identity.scopes,
     requiredScope: spec.requiredScope,
     targetOrgCode,
+    actorSuspended,
   });
 
-  // 4. Written down before the caller is answered, allow or deny.
+  // 5. Written down before the caller is answered, allow or deny.
   await write({
     decision: decision.allow ? "allow" : "deny",
     reason: decision.reason,
@@ -157,7 +164,7 @@ export async function guard(
     );
   }
 
-  // 5. Only now does the work happen.
+  // 6. Only now does the work happen.
   const data = await spec.perform(target, body, identity, mode);
 
   return json(
