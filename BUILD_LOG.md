@@ -472,3 +472,72 @@ bearing.
 **Open**
 
 - Token lifetime, above: a dashboard change, not a code change.
+
+---
+
+## Phase 6 — Console and live timeline
+
+**Built**
+
+- `app/page.tsx` — the landing page, stating the problem in plain words and
+  contrasting the two ways of giving agents an identity.
+- `app/console/` — the console. The isolation switch sits at the top, then the
+  tenant picker, the run and kill-switch buttons, five metrics, the live
+  timeline, and the audit trail folded away beneath.
+- `app/api/swarm/route.ts` — starts a run by launching the Python swarm and
+  returning its correlation id. Everything after that reaches the browser
+  through Convex as the workers write it.
+- `convex/public.ts` — the only public functions in the codebase.
+
+**Decisions**
+
+- The public functions expose telemetry — runs, events, audit rows, tenant
+  status — and never tenant records. The contents of a tenant's data stay
+  behind the seam, so the console cannot become a second way to read it.
+- The isolation switch and the kill switch are operator controls. A worker
+  still cannot reach them: workers hold Kinde tokens and talk to the tool
+  endpoints, and nothing in `public.ts` is reachable that way. A real
+  deployment would put an operator login in front of these. This one does not,
+  and the console is meant to be run locally.
+- The selected tenant is derived during render rather than stored and
+  synchronised in an effect.
+- Colour carries one meaning throughout: green contained, red breached, purple
+  stopped.
+
+**Checked live, before saving**
+
+Every beat driven through the same endpoints the buttons call, against the
+cloud deployment and real Kimi K3 runs:
+
+- **Leak.** Mode set to `shared` through the console's own mutation, then a
+  run started through `/api/swarm` for Tenant A:
+  `{"crossOrgAttempts":2,"escapes":2,"blocked":0}`.
+- **Contain.** Mode set to `per-org`, run started for **Tenant B**:
+  `{"crossOrgAttempts":1,"blocked":1,"escapes":0}`. The timeline lines read
+  `read_resource refused: cross_org`, which the timeline renders as a chip.
+- **Kill.** A run started for Tenant A, then suspended part way through with
+  the console's own action: `{"stopped":26,"blocked":27,"escapes":0}`, and the
+  tenant list the console reads now reports `isSuspended: true`. Lifting the
+  suspension restored it.
+
+Two tenants, three beats. `pnpm typecheck`, `pnpm lint`, `pnpm test` (20/20)
+and `pnpm build` clean, with no errors or warnings in the dev server log.
+
+**Found while verifying**
+
+- The bundler resolves interpreter paths written as literals, and follows
+  `.venv/bin/python`, a symlink out of the project, which failed the build.
+  The path is now assembled from segments at run time and overridable with
+  `SWARM_PYTHON`.
+- When a tenant is suspended the timeline simply stopped, with nothing said.
+  That is correct — the run-event endpoint sits behind the same seam, so a
+  suspended tenant cannot write even its own log lines — but on screen it read
+  as a hang. The console now says so, and a `stopped` metric counts the
+  refusals.
+
+**Not done**
+
+- The browser click-through itself. The Chrome extension was not connected, so
+  every wire the console uses was exercised directly instead. What has not been
+  confirmed by eye is the rendering: layout, colour, and the timeline updating
+  live as rows arrive.

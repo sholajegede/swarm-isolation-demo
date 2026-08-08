@@ -112,6 +112,11 @@ sure".
 
 ```
 app/                     The website (Next.js)
+  page.tsx               The landing page: the problem, in plain words.
+  console/               The console. Mode switch, tenant picker, run and
+                         kill-switch buttons, metrics, live timeline, and
+                         the audit trail underneath.
+  api/swarm/route.ts     Starts a swarm run and hands back its id.
   api/health/route.ts    Health check. Reports the mode the server decided
                          and which services are configured. Booleans only,
                          never actual values.
@@ -237,7 +242,7 @@ swarm.
 - [x] The enforcement seam and the two modes
 - [x] The Kimi K3 swarm
 - [x] The emergency stop
-- [ ] The screen you watch it on
+- [x] The screen you watch it on
 
 `BUILD_LOG.md` records what each step built and what was tested before it was
 saved.

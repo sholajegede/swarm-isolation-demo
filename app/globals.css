@@ -1,26 +1,84 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  --background: #fbfbfd;
+  --surface: #ffffff;
+  --surface-muted: #f3f4f7;
+  --border: #e3e5ec;
+  --foreground: #14151a;
+  --muted: #61646e;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Contained, breached, stopped. Used consistently everywhere. */
+  --ok: #157f4a;
+  --ok-soft: #e6f5ec;
+  --breach: #b4231f;
+  --breach-soft: #fdeceb;
+  --halt: #7c4dbe;
+  --halt-soft: #f2ebfb;
+  --accent: #1c4ed8;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #0b0c10;
+    --surface: #14161d;
+    --surface-muted: #1b1e27;
+    --border: #272b36;
+    --foreground: #eceef4;
+    --muted: #969bab;
+
+    --ok: #4ade80;
+    --ok-soft: #10291b;
+    --breach: #ff8177;
+    --breach-soft: #2e1512;
+    --halt: #c4a2f5;
+    --halt-soft: #221936;
+    --accent: #7aa2ff;
   }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-border-subtle: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-breach: var(--breach);
+  --color-breach-soft: var(--breach-soft);
+  --color-halt: var(--halt);
+  --color-halt-soft: var(--halt-soft);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* New timeline lines arrive constantly; a brief flash makes them readable. */
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.arriving {
+  animation: arrive 0.18s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arriving {
+    animation: none;
+  }
 }
