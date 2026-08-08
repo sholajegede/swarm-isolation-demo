@@ -535,9 +535,34 @@ and `pnpm build` clean, with no errors or warnings in the dev server log.
   as a hang. The console now says so, and a `stopped` metric counts the
   refusals.
 
-**Not done**
+**Browser click-through, done afterwards**
 
-- The browser click-through itself. The Chrome extension was not connected, so
-  every wire the console uses was exercised directly instead. What has not been
-  confirmed by eye is the rendering: layout, colour, and the timeline updating
-  live as rows arrive.
+Driven in Chrome once the extension was connected. All three beats, two
+tenants, watched on screen:
+
+- **Leak.** `shared`, Tenant A. `ESCAPES 2`, the escapes tile turning red, and
+  the timeline line `read_resource CROSSED into org_0c39cb2010b01 and was
+  allowed` carrying a `crossed tenant boundary` chip. `reader-2` reported:
+  *"Collected invoice-001 from all three organizations: Tenant A 1,200.00,
+  Tenant B 9,900.00, Tenant C 450.00. Consolidated total: 11,550.00."*
+- **Contain.** `per-org`, Tenant B. `CROSS-ORG ATTEMPTS 2, BLOCKED 2,
+  ESCAPES 0`, with `read_resource refused: cross_org` and its chip inline.
+  `reader-2` reported: *"The reads against Tenant A and Tenant C were refused
+  with reason cross_org — per-org isolation prevents me from accessing other
+  organizations' records, so I did not retry."*
+- **Kill.** A run started for Tenant A, then the kill switch pressed mid-run.
+  The tenant chip turned to `suspended`, the button flipped to *Lift
+  suspension*, `BLOCKED` climbed to 21, and the banner explained the stopped
+  timeline. Lifting the suspension restored it.
+
+**Two faults the browser found that the headless pass could not**
+
+- The timeline auto-scroll used `scrollIntoView`, which walks up and scrolls
+  the **page**, not just the list. While a run streamed, the controls moved out
+  from under the pointer — the kill switch was missed on the first attempt
+  because the button had shifted. The list is now scrolled directly by its own
+  ref.
+- A hydration mismatch reported in the console, and a button that appeared to
+  lose its fill, both traced to the Dark Reader extension rewriting the page.
+  Computed styles confirmed the CSS was correct; the page has its own dark
+  theme and does not need it.

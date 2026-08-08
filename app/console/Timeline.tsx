@@ -40,10 +40,15 @@ export function Timeline({
   correlationId: string | null;
   running: boolean;
 }) {
-  const endRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLOListElement>(null);
 
+  // Scroll the list itself rather than calling scrollIntoView, which walks up
+  // and scrolls the page as well. While a run streams that moved the controls
+  // out from under the pointer, so the kill switch could be missed.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "nearest" });
+    const list = listRef.current;
+    if (!list) return;
+    list.scrollTop = list.scrollHeight;
   }, [events.length]);
 
   if (!correlationId) {
@@ -70,7 +75,10 @@ export function Timeline({
   }
 
   return (
-    <ol className="max-h-[28rem] overflow-y-auto rounded-lg border border-border-subtle bg-surface">
+    <ol
+      ref={listRef}
+      className="max-h-[28rem] overflow-y-auto rounded-lg border border-border-subtle bg-surface"
+    >
       {events.map((event) => {
         const refusal = refusalOf(event);
         const crossing = isCrossing(event);
@@ -116,7 +124,6 @@ export function Timeline({
           </li>
         );
       })}
-      <div ref={endRef} />
     </ol>
   );
 }
