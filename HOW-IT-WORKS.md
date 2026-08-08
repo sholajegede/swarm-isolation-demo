@@ -162,6 +162,9 @@ scripts/
                          token stop working while other tenants carry on.
   kill-mid-run.ts        The same, with two real swarms running, one of
                          them suspended part way through.
+  e2e-narrative.ts       The whole story in one pass: seed, leak, refusal,
+                         least privilege, emergency stop, and the log
+                         entries that match each one.
 
 swarm/                   The Kimi K3 agents (Python)
   identity.py            Each worker gets its own token, for its own tenant

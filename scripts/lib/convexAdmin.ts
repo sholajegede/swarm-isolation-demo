@@ -44,6 +44,7 @@ export type AuditRow = {
   action: string;
   resourceKey?: string;
   isolationMode: IsolationMode;
+  workerLabel?: string;
 };
 
 export function auditFor(correlationId: string): AuditRow[] {

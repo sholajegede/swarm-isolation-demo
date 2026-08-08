@@ -383,8 +383,7 @@ The demo shows what agents do, not what they were told to do.
   are public functions. A worker cannot reach them, but anyone with the
   deployment URL could. The demo is meant to be run locally, and a real
   deployment would put an operator login in front.
-- **Phases 8 and 9** — the single-pass end-to-end narrative script, and the
-  README with deployment notes.
+- **Phase 9** — the README with setup and deployment notes.
 
 ---
 
@@ -418,6 +417,7 @@ scripts/
   repro-cross-tenant.ts    Phase 3 gate, 12 checks.
   kill-switch.ts           Phase 5 gate, 10 checks, no model calls.
   kill-mid-run.ts          Phase 5 gate, live, two swarms.
+  e2e-narrative.ts         The whole arc in one pass, audit rows matched.
 
 app/
   page.tsx             Landing.

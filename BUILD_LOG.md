@@ -628,3 +628,57 @@ mode `per-org`.
 `BUILD_RECORD.md` — a single consolidated account of the whole build, including
 every mistake and the two findings that contradicted the plan, compiled from
 this log and the git history for use when writing about it.
+
+---
+
+## Phase 8 — The whole arc in one pass
+
+**Built**
+
+`scripts/e2e-narrative.ts` (`pnpm e2e`). Seven beats end to end: seed three
+tenants, the shared-identity leak, a real Kimi K3 swarm under that same shared
+identity, the identical call refused under per-org, least privilege inside a
+tenant, the kill switch, and every beat matched back to its audit rows by
+correlation id. `--no-swarm` runs the enforcement beats alone, with no model
+calls.
+
+**Decisions**
+
+- **The enforcement beats are asserted exactly; the swarm run is not.** The
+  server decides the enforcement outcomes, and they must be identical every
+  time. What the agents choose to do is theirs, and it varies — in one earlier
+  run the agents did not reach across at all. Requiring a model to misbehave on
+  cue would make this script lie about how reliable it is, so the swarm beat
+  asserts that it ran, authenticated and was judged, and reports the number of
+  permitted cross-tenant calls as information rather than as a pass condition.
+- The script always restores the deployment in a `finally`: tenant unsuspended,
+  mode back to `per-org`, demo data reseeded. It leaves things as a fresh clone
+  would expect.
+
+**Checked live, before saving**
+
+- Full run including a real Kimi K3 swarm: **all beats passed in one pass**.
+  The swarm beat recorded 29 decisions across 3 agents (`reader-1`, `reader-2`,
+  `writer-1`), of which 2 cross-tenant calls were permitted.
+- The audit matching is the part worth having: the leak and the refusal are
+  recorded as the *same action* — `resource.read`, same actor
+  `org_2606b8199462b`, same target `org_364dd8200a3d3` — with different
+  outcomes, `allow/cross_org_allowed` against `deny/cross_org`.
+- **Failure is detected, not just success.** Run with a deliberately wrong
+  audience the script exits `1` and says why:
+  `aborted: token request failed for tenant A READER: HTTP 400`. A script that
+  cannot fail proves nothing.
+- Three consecutive clean runs, all `exit=0`.
+
+**Noted**
+
+One run exited non-zero on an otherwise healthy deployment, and three
+consecutive runs afterwards were clean. It is the same intermittent network
+fault seen in phase 5. The connection-level retries added then cover the tool
+calls; the abort path reports it clearly rather than passing quietly, which is
+the behaviour worth having.
+
+**A typecheck catch**
+
+`AuditRow` in the script helpers had no `workerLabel`, so counting distinct
+agents did not compile. Found by `pnpm typecheck`, not at run time.

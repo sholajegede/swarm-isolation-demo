@@ -18,6 +18,7 @@
     "repro:cross-tenant": "tsx scripts/repro-cross-tenant.ts",
     "kill-switch": "tsx scripts/kill-switch.ts",
     "kill-switch:live": "tsx scripts/kill-mid-run.ts",
+    "e2e": "tsx scripts/e2e-narrative.ts",
     "swarm": "./.venv/bin/python -m swarm"
   },
   "dependencies": {
