@@ -1,50 +1,56 @@
 # Swarm isolation demo
 
-This project runs a swarm of Kimi K3 AI agents for three separate customers. It
-shows one agent reading another customer's private data. It then shows how to
-stop that, and how to shut one customer down in an emergency.
+A swarm of Kimi K3 agents works for three customers at the same time. Each customer is a tenant. This demo shows one agent reading another tenant's private records, then shows the server refusing the same call.
 
-A swarm is a group of AI agents that work at the same time. Each customer is a
-tenant. The agents in this demo read invoice records and write a summary for
-their own tenant.
+The idea is small. An agent proves nothing about itself. It presents a token, Kinde signs that token, and the token names one tenant. The server compares the tenant on the token against the tenant that owns the record, on every call. A token minted for one tenant cannot read another, because the server checks, not because the agent behaves.
 
-Three services do three jobs:
+![Flow of one agent call. Three Kimi K3 agents for Tenant A each exchange their own client credentials at Kinde for a token that carries an org_code claim and one scope. The agent calls a tool endpoint over HTTP, never the database. One function then runs four checks in a fixed order: signature against the Kinde JWKS, tenant suspension, org_code against the record owner, and required scope. Each check has one refusal: 401 invalid_token, 403 organization_suspended, 403 cross_org, and 403 insufficient_scope. In shared mode the third check instead permits the call and returns 200 cross_org_allowed, which reaches Tenant B and C records. A pass returns 200 ok and reaches Tenant A records. Every outcome writes one audit row before the caller is answered, carrying a correlationId.](article-assets/diagram.png)
 
-- **Kimi K3** drives the agents. Moonshot serves the model. The agents choose
-  their own actions, and nobody scripts them.
-- **Kinde** proves who each agent is. One Kinde organization holds one tenant.
-  One machine-to-machine application holds one agent role in one tenant. Each
-  agent gets a token before it does anything, and that token names its tenant.
-- **Convex** stores the data, decides every call, and streams each step to the
-  browser as it happens.
+Every agent call passes through one function. That function is the only place a call is allowed or refused, and the only place the audit trail is written.
 
-In short: Kimi K3 decides, Kinde proves, Convex enforces and records.
+## The two modes
 
-Every agent call passes through one function on the server. That function reads
-the tenant from the token, not from the request. It then decides.
+The server holds the mode. No agent and no browser can set it. Any value that is not exactly `shared` resolves to `per-org`, so a wrong value fails into the enforcing mode.
 
-The demo runs in one of two modes. The mode is the only difference between a
-leak and a containment.
+The numbers below come from two Kimi K3 runs against the same three tenants, with the same prompt and the same records. Only the mode differed.
 
-| Mode | Agent identity | Result of a cross-tenant call |
+| | `shared` | `per-org` |
 | --- | --- | --- |
-| `shared` | One credential for the whole swarm | The server permits the call. The data leaks. |
-| `per-org` | One credential for each tenant | The server refuses the call with `403 cross_org`. |
+| Agent identity | One credential for the whole swarm | One credential for each tenant |
+| Token carries `org_code` | Not used | Checked on every call |
+| Token carries a scope | Not used | Checked on every call |
+| Cross-tenant read | The server permits it | The server refuses it, `403 cross_org` |
+| Agents in the run | 3 | 3 |
+| Tool calls | 6 | 11 |
+| Cross-tenant attempts | 2 | 2 |
+| Calls the server refused | 0 | 2 |
+| **Cross-tenant reads that succeeded** | **2** | **0** |
+| What the reading agent reported | "Collected invoice-001 from all three organizations: Tenant A: 1,200.00; Tenant B: 9,900.00; Tenant C: 450.00." | "The reads against Tenant A and Tenant C were refused with reason cross_org, so I did not retry." |
 
-The demo also has an emergency stop. You suspend one tenant, and its agents
-stop. The other tenants continue to work.
+The agent did not change between those runs. The prompt did not change. The identity it carried changed.
 
-## What you can watch
+## Decisions the server returns
 
-Open the console and try three things:
+The server writes one audit row for each decision, and returns the reason to the caller with a correlation id. It writes the row before it answers, so a client that disconnects cannot lose a refusal.
 
-1. **Leak.** Select `shared`. Run a swarm. An agent reads another tenant's data.
-2. **Contain.** Select `per-org`. Run the same swarm. The server refuses the
-   same call and records it.
-3. **Stop.** Start a run. Press the kill switch. That tenant stops. The others
-   continue.
+| Reason | HTTP | The server returns this when | Modes |
+| --- | --- | --- | --- |
+| `ok` | 200 | The caller reads or writes a record its own tenant owns. | both |
+| `cross_org_allowed` | 200 | The caller reaches another tenant's record and the mode permits it. The audit row names both tenants. | `shared` |
+| `cross_org` | 403 | The caller reaches another tenant's record. | `per-org` |
+| `insufficient_scope` | 403 | The token does not carry the scope the action needs. | `per-org` |
+| `not_found` | 403 | No such record inside the caller's own tenant. | both |
+| `organization_suspended` | 403 | The tenant is suspended. Checked before the mode, so it stops a swarm in both modes. | both |
+| `missing_token` | 401 | The request carries no `Authorization` header. | both |
+| `malformed_token` | 401 | The header is present but is not a bearer token. | both |
+| `invalid_token` | 401 | The signature does not check out, or the token is malformed. | both |
+| `token_expired` | 401 | The token passed its expiry time. | both |
+| `wrong_audience` | 401 | The `aud` claim does not match the registered API. | both |
+| `wrong_issuer` | 401 | The `iss` claim does not match the Kinde domain. | both |
+| `missing_org_code` | 401 | The token carries no `org_code` claim, so it names no tenant. | both |
+| `server_misconfigured` | 401 | The deployment has no issuer or audience set, so it can check nothing. | both |
 
-## Requirements
+## What you need
 
 - Node 22 or later, and pnpm
 - Python 3.11 or later
@@ -54,20 +60,11 @@ Open the console and try three things:
 
 ## Set up Kinde
 
-Create these items in the Kinde dashboard.
+Create one API. Name it `Swarm Demo API`, set the audience to `swarm-demo-api`, and add two scopes: `resource:read` and `resource:write`.
 
-**One API**
+Create three organizations, named `Tenant A`, `Tenant B` and `Tenant C`. Kinde gives each one a code. Write the three codes down. The codes are identifiers, not secrets.
 
-- Name: `Swarm Demo API`
-- Audience: `swarm-demo-api`
-- Scopes: `resource:read` and `resource:write`
-
-**Three organizations**
-
-Name them `Tenant A`, `Tenant B` and `Tenant C`. Kinde gives each one a code.
-Write the three codes down. The codes are not secrets.
-
-**Six machine-to-machine applications, two in each organization**
+Create six machine-to-machine applications, two inside each organization. Authorize each one against `Swarm Demo API`, and give each one a single scope.
 
 | Organization | Application | Scope |
 | --- | --- | --- |
@@ -78,25 +75,9 @@ Write the three codes down. The codes are not secrets.
 | Tenant C | `Tenant C Reader` | `resource:read` |
 | Tenant C | `Tenant C Writer` | `resource:write` |
 
-Authorize each application against `Swarm Demo API`. Give each one a single
-scope. Least privilege is part of what the demo shows.
+Create one more application for the Management API. Name it `Swarm Demo Management`, and give it `read:organizations` and `update:organizations`. The kill switch uses this application.
 
-**One Management API application**
-
-- Name: `Swarm Demo Management`
-- Scopes: `read:organizations` and `update:organizations`
-
-The kill switch uses this application.
-
-## Install
-
-```bash
-pnpm install
-python3 -m venv .venv
-./.venv/bin/pip install -r swarm/requirements.txt
-```
-
-## Configure
+## Configure the environment
 
 Copy the example file, then fill it in.
 
@@ -104,28 +85,22 @@ Copy the example file, then fill it in.
 cp .env.example .env.local
 ```
 
-Set these values in `.env.local`:
-
-- `KINDE_ISSUER_URL` is your Kinde domain, with no slash at the end.
-- `KINDE_AUDIENCE` is `swarm-demo-api`.
-- `KINDE_M2M_TOKEN_URL` is your Kinde domain, then `/oauth2/token`.
-- `KINDE_ORG_TENANT_A`, `_B` and `_C` are the three organization codes.
-- The twelve client id and client secret values, two for each application.
-- `KINDE_MGMT_CLIENT_ID` and `KINDE_MGMT_CLIENT_SECRET`.
-- `KIMI_MODEL`, `KIMI_BASE_URL` and `KIMI_API_KEY`.
+| Variable | Holds |
+| --- | --- |
+| `KINDE_ISSUER_URL` | Your Kinde domain, with no slash at the end |
+| `KINDE_AUDIENCE` | `swarm-demo-api` |
+| `KINDE_M2M_TOKEN_URL` | Your Kinde domain, then `/oauth2/token` |
+| `KINDE_ORG_TENANT_A`, `_B`, `_C` | The three organization codes |
+| `KINDE_M2M_TENANT_{A,B,C}_{READER,WRITER}_CLIENT_ID` | Six client ids |
+| `KINDE_M2M_TENANT_{A,B,C}_{READER,WRITER}_CLIENT_SECRET` | Six client secrets |
+| `KINDE_MGMT_CLIENT_ID`, `KINDE_MGMT_CLIENT_SECRET` | The Management API application |
+| `KIMI_MODEL`, `KIMI_BASE_URL`, `KIMI_API_KEY` | Kimi K3 access |
+| `KIMI_REASONING_EFFORT` | `low`, `high` or `max`. Defaults to `low` |
+| `SWARM_PYTHON` | The Python interpreter the console starts. Defaults to `.venv/bin/python` |
 
 Git ignores `.env.local`. Do not commit it.
 
-## Start Convex
-
-```bash
-npx convex dev
-```
-
-This command writes `CONVEX_DEPLOYMENT` and the two Convex URLs into
-`.env.local`. It offers a local deployment if you have no Convex account.
-
-The Convex functions read their own environment. Set it once:
+The Convex functions read their own environment, so `.env.local` does not reach them. Set those values once:
 
 ```bash
 npx convex env set KINDE_ISSUER_URL https://YOUR-DOMAIN.kinde.com
@@ -136,21 +111,28 @@ npx convex env set KINDE_ORG_TENANT_B org_xxxxxxxx
 npx convex env set KINDE_ORG_TENANT_C org_xxxxxxxx
 ```
 
-Then load the demo data:
+## Install and run
+
+```bash
+pnpm install
+python3 -m venv .venv
+./.venv/bin/pip install -r swarm/requirements.txt
+```
+
+Start Convex. The command writes `CONVEX_DEPLOYMENT` and the two Convex URLs into `.env.local`, and offers a local deployment if you have no Convex account.
+
+```bash
+npx convex dev
+```
+
+Load the demo data, then start the web app:
 
 ```bash
 pnpm seed
-```
-
-## Run it
-
-Start the web app:
-
-```bash
 pnpm dev
 ```
 
-Open `http://localhost:3000`. The console is at `/console`.
+Open `http://localhost:3000`. The console is at `/console`. Pick a tenant, start a swarm, and watch each agent step arrive.
 
 Run a swarm from the command line instead:
 
@@ -158,90 +140,96 @@ Run a swarm from the command line instead:
 pnpm swarm --tenant A
 ```
 
-## Prove it
+## Verify it
 
-Each script checks one part of the demo against the live services. Each script
-exits non-zero if a check fails.
+Each script checks one part of the build against the live services. Each script exits non-zero if a check fails, and each one restores the deployment before it ends.
 
-| Command | What it proves | Model calls |
-| --- | --- | --- |
-| `pnpm test` | The data layer isolates tenants. 23 unit tests. | No |
-| `pnpm verify:auth` | The server takes the tenant from the token, and refuses edited tokens. 14 checks. | No |
-| `pnpm repro:cross-tenant` | The same call leaks in `shared` and fails in `per-org`. 12 checks. | No |
-| `pnpm kill-switch` | A suspended tenant stops at once. Other tenants continue. 10 checks. | No |
-| `pnpm kill-switch:live` | The same, with two real swarms running. | Yes |
-| `pnpm e2e` | The whole story in one pass, with the log entries matched. | Yes |
-| `pnpm e2e --no-swarm` | The same, without the swarm run. | No |
+| Command | Checks | What it proves | Model calls |
+| --- | --- | --- | --- |
+| `pnpm test` | 23 | The data layer isolates tenants, and an unknown tenant counts as suspended. | No |
+| `pnpm verify:auth` | 14 | The server takes the tenant from the token. It refuses a token with one changed character in the signature, and a token whose `org_code` was edited. | No |
+| `pnpm repro:cross-tenant` | 12 | The same call succeeds in `shared` and returns `403 cross_org` in `per-org`. Least privilege holds inside a tenant. | No |
+| `pnpm kill-switch` | 10 | A token held before suspension stops working at once. Other tenants keep running. | No |
+| `pnpm e2e --no-swarm` | 19 | The whole story in one pass, with the audit rows matched to each beat. | No |
+| `pnpm e2e` | 21 | The same, plus one real Kimi K3 swarm. | Yes |
+| `pnpm kill-switch:live` | 6 | Two real swarms run, and one tenant is suspended mid-run. | Yes |
 
-Start with `pnpm e2e --no-swarm`. It runs the whole arc and costs nothing.
+Start with `pnpm e2e --no-swarm`. It walks the whole arc and costs nothing.
 
-## Commands
+The unit tests carry one result worth naming. Delete the ownership check from `convex/lib/tenancy.ts` and run `pnpm test` again: exactly three of the six tenancy tests fail, and they are the three cross-tenant tests. Restore the check and all six pass. A suite that cannot fail when the boundary breaks proves nothing.
 
-| Command | Action |
-| --- | --- |
-| `pnpm dev` | Start the web app |
-| `pnpm build` | Build the web app |
-| `pnpm test` | Run the unit tests |
-| `pnpm typecheck` | Check the types |
-| `pnpm lint` | Check the code style |
-| `pnpm seed` | Load the demo data again |
-| `pnpm swarm --tenant A` | Run one swarm from the command line |
+## What this build proves, and what it does not
 
-## How the server decides
+**Kinde M2M tokens carry an `org_code` claim.** All six applications returned a token naming their own organization and holding exactly one scope. That claim is what makes one identity per tenant possible.
 
-Every agent call goes through one function in `convex/lib/seam.ts`. The order is
-fixed:
+**Suspending a Kinde organization does not stop its M2M agents.** This was measured before anything was built on it:
 
-1. The server checks the token against the Kinde public keys.
-2. The server checks whether the tenant is suspended.
-3. The server finds which tenant owns the record.
-4. The server applies the rule in `convex/lib/decide.ts`.
-5. The server writes one audit row.
-6. The server answers the agent.
+```
+suspend Tenant C   ->  is_suspended: true
+token endpoint     ->  HTTP 200      (Kinde still issues M2M tokens)
+```
 
-The server writes the audit row before it answers. A client that disconnects
-cannot lose a refusal.
+Suspension governs people who sign in. It does not stop the client-credentials flow, and a token already issued stays valid until it expires, because nothing recalls a JWT. So the kill switch does not rest on suspension alone. The server reads suspension state on every call and refuses. That check is what ends a run in progress.
 
-The agents never reach the database. They call tool endpoints over HTTP with
-their own token. The request body chooses the record. The token decides the
-tenant.
+With two swarms running and one tenant suspended twelve seconds in, the audit recorded this:
 
-## Two facts that shape the design
+```
+tenant A: {"ok": 2, "organization_suspended": 17}
+tenant B: {"ok": 39}                                run status: completed
+```
 
-**Kinde machine-to-machine tokens carry an `org_code` claim.** This claim makes
-one identity for each tenant possible.
+Tenant A did real work, then stopped. Tenant B finished normally and was never refused.
 
-**Kinde organization suspension does not stop those tokens.** Suspension governs
-people who sign in. Machine credentials keep working. Tokens already issued stay
-valid until they expire, and nothing recalls them. So the server checks
-suspension on every call. That check is what stops a running swarm, not the
-suspension by itself.
+**Kinde issues these tokens with a 24 hour lifetime.** Change the lifetime for each application in the Kinde dashboard. A shorter lifetime does not make the kill switch work, because suspension never invalidated tokens. It reduces the damage from a token that leaks some other way.
 
-## Known limits
+**The console has no operator login.** The mode switch and the kill switch are public Convex functions. No agent can reach them, because agents hold Kinde tokens and call only the tool endpoints. Anyone who knows the deployment URL can. Run this demo on your own machine, and put a login in front of those functions for anything real.
 
-- **Token lifetime is 24 hours.** Kinde sets this value for each application in
-  its dashboard. The demo cannot change it, because the Management API
-  application holds only organization scopes. A shorter lifetime does not affect
-  the kill switch, because the server checks suspension on every call. A shorter
-  lifetime does reduce the risk from a token that leaks another way.
-- **The console has no operator login.** The isolation switch and the kill
-  switch are public Convex functions. No agent can reach them, because agents
-  hold Kinde tokens and call only the tool endpoints. But anyone who knows the
-  deployment URL can. Run this demo on your own machine. A real deployment needs
-  an operator login in front of these functions.
-- **The console starts a Python process.** The `/api/swarm` route runs the swarm
-  on the machine that serves the web app. This works on your own machine. It
-  does not work on a serverless host.
+**This build runs three agents, not three hundred.** Moonshot's Agent Swarm runs up to 300 sub-agents. The pattern does not change with scale, because the server checks one call at a time. The operational load does change. Four thousand tool calls produce four thousand audit rows, and those rows need somewhere to go.
 
-## Deploy
+**The agents choose their own actions, so runs differ.** In one `shared` run the agents did not reach across a tenant boundary at all. Nothing here scripts the reach. `pnpm e2e` asserts the server's decisions exactly, and reports what the agents did as information.
 
-The web app deploys to Vercel. Set the same variables from `.env.local` in the
-Vercel project.
+**The console starts a local process.** The `/api/swarm` route runs the Python swarm on the machine that serves the web app. This works locally. It does not work on a serverless host, so run the swarm with `pnpm swarm` in that case.
 
-Deploy the Convex backend with `npx convex deploy`. Set the Convex environment
-variables again for the production deployment.
+## How the code is laid out
 
-The console cannot start a swarm on Vercel, because the route starts a Python
-process. Run the swarm from your own machine with `pnpm swarm`.
+```
+convex/
+  lib/decide.ts          The rule, as a pure function. No network, no database.
+  lib/seam.ts            The single door. Every agent call passes through it.
+  lib/kindeToken.ts      Checks a token against the Kinde JWKS.
+  lib/kindeManagement.ts The Kinde Management API, for the kill switch.
+  lib/tenancy.ts         Checks record ownership after a load.
+  http.ts                The tool endpoints agents call.
+  settings.ts            The isolation mode, held server-side.
+  audit.ts               One row for each decision.
+  runs.ts, tenants.ts    Runs, run events, suspension state.
+  public.ts              The only public surface. Telemetry, never records.
 
-`CHANGELOG.md` lists the changes.
+swarm/
+  identity.py            One Kinde application per role per tenant.
+  backend.py             The only way an agent reaches data.
+  kimi.py                The Moonshot client.
+  worker.py              One agent: think, call a tool, react, report.
+  orchestrator.py        Splits the goal, runs the agents.
+
+app/
+  page.tsx               Landing page.
+  console/               The console, with the live timeline.
+  api/swarm/route.ts     Starts a run.
+
+scripts/                 The verification scripts in the table above.
+```
+
+## Regenerate the diagram
+
+The diagram source is `article-assets/diagram.mmd`. Edit it, then run:
+
+```bash
+pnpm diagram
+```
+
+The script calls the Mermaid CLI through `npx`, so nothing is added to the dependency tree. It writes `article-assets/diagram.png` at 1800 CSS pixels wide and scale 3.
+
+## More
+
+`CHANGELOG.md` lists the changes. `AGENTS.md` holds the rules for anyone, or anything, writing code here.

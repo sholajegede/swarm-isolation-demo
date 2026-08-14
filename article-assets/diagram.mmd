@@ -1,0 +1,66 @@
+%%{init: {"theme": "base", "flowchart": {"curve": "basis", "nodeSpacing": 45, "rankSpacing": 60}, "themeVariables": {
+  "fontFamily": "ui-sans-serif, system-ui, sans-serif",
+  "fontSize": "15px",
+  "primaryColor": "#f3f4f7",
+  "primaryTextColor": "#14151a",
+  "primaryBorderColor": "#c9cdd8",
+  "lineColor": "#8a8f9e",
+  "clusterBkg": "#fbfbfd",
+  "clusterBorder": "#d8dbe4"
+}}}%%
+flowchart LR
+    subgraph swarm["Kimi K3 swarm, running for Tenant A"]
+        R1["reader-1<br/>resource:read"]
+        R2["reader-2<br/>resource:read"]
+        W1["writer-1<br/>resource:write"]
+    end
+
+    KINDE{{"Kinde<br/>one organization per tenant<br/>one M2M app per agent role"}}
+    TOOL["Tool endpoint<br/>agents never reach<br/>the database"]
+
+    R1 --> KINDE
+    R2 -- "client credentials" --> KINDE
+    W1 --> KINDE
+    KINDE -- "token: org_code + scope" --> TOOL
+
+    subgraph seam["The seam, one function, fixed order"]
+        C1{"1<br/>Signature<br/>valid?"}
+        C2{"2<br/>Tenant<br/>suspended?"}
+        C3{"3<br/>org_code =<br/>record owner?"}
+        C4{"4<br/>Scope<br/>present?"}
+
+        C1 -- yes --> C2
+        C2 -- no --> C3
+        C3 -- yes --> C4
+
+        C1 -- no --> D1["401<br/>invalid_token"]
+        C2 -- yes --> D2["403<br/>organization_suspended"]
+        C3 -- "no, per-org" --> D3["403<br/>cross_org"]
+        C3 -- "no, shared" --> LEAK["200<br/>cross_org_allowed"]
+        C4 -- no --> D4["403<br/>insufficient_scope"]
+        C4 -- yes --> OK["200<br/>ok"]
+    end
+
+    TOOL --> C1
+
+    OK --> OWN[("Tenant A<br/>records")]
+    LEAK --> OTHER[("Tenant B and C<br/>records")]
+
+    D1 --> AUDIT
+    D2 --> AUDIT
+    D3 --> AUDIT
+    D4 --> AUDIT
+    OK --> AUDIT
+    LEAK --> AUDIT
+
+    AUDIT[("Audit row for every decision<br/>written before the caller is answered<br/>carries correlationId")]
+
+    classDef allow fill:#e6f5ec,stroke:#157f4a,color:#0f5c36
+    classDef deny fill:#fdeceb,stroke:#b4231f,color:#8e1c19
+    classDef store fill:#ffffff,stroke:#c9cdd8,color:#14151a
+    classDef idp fill:#f2ebfb,stroke:#7c4dbe,color:#54338a
+
+    class OK,OWN allow
+    class D1,D2,D3,D4,LEAK,OTHER deny
+    class AUDIT store
+    class KINDE idp

@@ -19,6 +19,7 @@
     "kill-switch": "tsx scripts/kill-switch.ts",
     "kill-switch:live": "tsx scripts/kill-mid-run.ts",
     "e2e": "tsx scripts/e2e-narrative.ts",
+    "diagram": "npx -y @mermaid-js/mermaid-cli@11 -i article-assets/diagram.mmd -o article-assets/diagram.png -b white -s 3 -w 1800",
     "swarm": "./.venv/bin/python -m swarm"
   },
   "dependencies": {
